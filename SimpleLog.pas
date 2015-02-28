@@ -2,7 +2,7 @@
 
 SimpleLog
 
-©František Milt 2015-02-27
+�Franti�ek Milt 2015-02-27
 
 Version 1.3
 
@@ -163,13 +163,15 @@ end;
 
 Function SLCB_Input(var F: TTextRec): Integer;
 var
+  BytesRead:  LongWord;
   StrBuffer:  String;
 begin
-If ReadConsole(F.Handle,F.BufPtr,F.BufSize,LongWord(F.BufEnd),nil) then
+If ReadConsole(F.Handle,F.BufPtr,F.BufSize,{%H-}BytesRead,nil) then
   begin
-    SetLength(StrBuffer,F.BufEnd);
-    Move(F.Buffer,PChar(StrBuffer)^,F.BufEnd * SizeOf(Char));
+    SetLength(StrBuffer,BytesRead);
+    Move(F.Buffer,PChar(StrBuffer)^,BytesRead * SizeOf(Char));
     TSimpleLog(Addr(F.UserData[UDI_OUTFILE])^).ProtectedAddLog(StrBuffer,0,False);
+    F.bufend := BytesRead;
     Result := ERR_SUCCESS;
   end
 else Result := ERR_READ_FAILED;
@@ -268,7 +270,7 @@ const
   def_TimeFormat             = 'yyyy-mm-dd hh:nn:ss.zzz';
   def_TimeSeparator          = ' //: ';
   def_Breaker                = '--------------------------------------------------------------------------------';
-  def_HeaderText             = 'Created by SimpleLog 1.3, ©2015 František Milt';
+  def_HeaderText             = 'Created by SimpleLog 1.3, (c)2015 Frantisek Milt';
   def_IndentNewLines         = False;
   def_ThreadLocked           = False;
   def_InternalLog            = True;
