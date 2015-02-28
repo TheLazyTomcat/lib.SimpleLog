@@ -2,12 +2,14 @@
 
 SimpleLog
 
-©František Milt 2014-10-26
+Â©FrantiÅ¡ek Milt 2015-02-27
 
-Version 1.2.4
+Version 1.3
 
 ===============================================================================}
+{$IFNDEF SimpleLog_Include}
 unit SimpleLog;
+{$ENDIF}
 
 interface
 
@@ -23,45 +25,50 @@ type
   TSimpleLog = class(TObject)
   private
     fFormatSettings:          TFormatSettings;
-    fTimeOfCreation:          TDateTime;
     fTimeFormat:              String;
     fTimeSeparator:           String;
-    fForceTime:               Boolean;
-    fForcedTime:              TDateTIme;
+    fTimeOfCreation:          TDateTime;
     fBreaker:                 String;
     fHeaderText:              String;
     fIndentNewLines:          Boolean;
-    fThreadLockedAdd:         Boolean;
+    fThreadLocked:            Boolean;
+    fInternalLog:             Boolean;
     fWriteToConsole:          Boolean;
-    fInMemoryLog:             Boolean;
     fStreamToFile:            Boolean;
+    fConsoleBinded:           Boolean;
     fStreamAppend:            Boolean;
     fStreamFileName:          String;
     fStreamFileAccessRights:  Cardinal;
+    fForceTime:               Boolean;
+    fForcedTime:              TDateTIme;
+    fLogCounter:              Integer;
     fThreadLock:              TCriticalSection;
-    fInMemoryLogObj:          TStringList;
+    fInternalLogObj:          TStringList;
     fExternalLogs:            TObjectList;
     fStreamFile:              TFileStream;
-    fLogCounter:              Integer;
+    fConsoleBindMutex:        THandle;
     fOnLog:                   TLogEvent;
-    Function GetExternalLog(Index: Integer): TStrings;
+    procedure SetWriteToConsole(Value: Boolean);    
     procedure SetStreamToFile(Value: Boolean);
     procedure SetStreamFileName(Value: String);
-    Function GetInMemoryLogCount: Integer;
-    Function GetExternalLogsCount: Integer;
+    Function GetInternalLogCount: Integer;
+    Function GetExternalLogsCount: Integer;    
+    Function GetExternalLog(Index: Integer): TStrings;
   protected
-    Function GetCurrentTime: TDateTime;
-    Function GetTimeAsStr(Time: TDateTime; Format: String = '$'): String; virtual;
-    procedure ProtectedAddLog(LogText: String; IndentCount: Integer = 0); virtual;
+    Function ReserveConsoleBind: Boolean; virtual;
+    Function GetCurrentTime: TDateTime; virtual;
+    Function GetDefaultStreamFileName: String; virtual;
+    Function GetTimeAsStr(Time: TDateTime; const Format: String = '$'): String; virtual;
+    procedure DoIndentNewLines(var Str: String; IndentCount: Integer); virtual;    
+    procedure ProtectedAddLog(LogText: String; IndentCount: Integer = 0; LineBreak: Boolean = True); virtual;
   public
     constructor Create;
     destructor Destroy; override;
-    procedure DoIndentNewLines(var Str: String; IndentCount: Integer); virtual;
     procedure ThreadLock; virtual;
     procedure ThreadUnlock; virtual;
-    procedure AddLog(Text: String); virtual;
-    procedure AddLogForceTime(Text: String; Time: TDateTime); virtual;
-    procedure AddLogNoTime(Text: String); virtual;
+    procedure AddLogNoTime(const Text: String); virtual;
+    procedure AddLogTime(const Text: String; Time: TDateTime); virtual;
+    procedure AddLog(const Text: String); virtual;
     procedure AddEmpty; virtual;
     procedure AddBreaker; virtual;
     procedure AddTimeStamp; virtual;
@@ -69,44 +76,179 @@ type
     procedure AddEndStamp; virtual;
     procedure AddAppendStamp; virtual;
     procedure AddHeader; virtual;
-    procedure ForceTimeSet(Time: TDateTime);
-    procedure UnforceTimeSet;
-    Function InMemoryLogGetLog(LogIndex: Integer): String; virtual;
-    Function InMemoryLogGetAsText: String; virtual;
-    procedure InMemoryLogClear; virtual;
-    Function InMemoryLogSaveToFile(FileName: String; Append: Boolean = False): Boolean; virtual;
-    Function InMemoryLogLoadFromFile(FileName: String; Append: Boolean = False): Boolean; virtual;
+    procedure ForceTimeSet(Time: TDateTime); virtual;
+    Function InternalLogGetLog(LogIndex: Integer): String; virtual;
+    Function InternalLogGetAsText: String; virtual;
+    procedure InternalLogClear; virtual;
+    Function InternalLogSaveToFile(const FileName: String; Append: Boolean = False): Boolean; virtual;
+    Function InternalLogLoadFromFile(const FileName: String; Append: Boolean = False): Boolean; virtual;
+    Function BindConsole: Boolean; virtual;
+    procedure UnbindConsole; virtual;
     Function ExternalLogAdd(ExternalLog: TStrings): Integer; virtual;
     Function ExternalLogIndexOf(ExternalLog: TStrings): Integer; virtual;
     Function ExternalLogRemove(ExternalLog: TStrings): Integer; virtual;
     procedure ExternalLogDelete(Index: Integer); virtual;
+    property FormatSettings: TFormatSettings read fFormatSettings write fFormatSettings;
     property ExternalLogs[Index: Integer]: TStrings read GetExternalLog; default;
   published
-    property TimeOfCreation: TDateTime read fTimeOfCreation;
     property TimeFormat: String read fTimeFormat write fTimeFormat;
     property TimeSeparator: String read fTimeSeparator write fTimeSeparator;
-    property ForceTime: Boolean read fForceTime write fForceTime;
-    property ForcedTime: TDateTIme read fForcedTime write fForcedTime;
+    property TimeOfCreation: TDateTime read fTimeOfCreation;
     property Breaker: String read fBreaker write fBreaker;
     property HeaderText: String read fHeaderText write fHeaderText;
     property IndentNewLines: Boolean read fIndentNewLines write fIndentNewLines;
-    property ThreadLockedAdd: Boolean read fThreadLockedAdd write fThreadLockedAdd;
-    property WriteToConsole: Boolean read fWriteToConsole write fWriteToConsole;
-    property InMemoryLog: Boolean read fInMemoryLog write fInMemoryLog;
+    property ThreadLocked: Boolean read fThreadLocked write fThreadLocked;
+    property InternalLog: Boolean read fInternalLog write fInternalLog;
+    property WriteToConsole: Boolean read fWriteToConsole write SetWriteToConsole;
     property StreamToFile: Boolean read fStreamToFile write SetStreamToFile;
+    property ConsoleBinded: Boolean read fConsoleBinded write fConsoleBinded;
     property StreamAppend: Boolean read fStreamAppend write fStreamAppend;
     property StreamFileName: String read fStreamFileName write SetStreamFileName;
     property StreamFileAccessRights: Cardinal read fStreamFileAccessRights write fStreamFileAccessRights;
+    property ForceTime: Boolean read fForceTime write fForceTime;
+    property ForcedTime: TDateTIme read fForcedTime write fForcedTime;
     property LogCounter: Integer read fLogCounter;
-    property InMemoryLogCount: Integer read GetInMemoryLogCount;
+    property InMemoryLogCount: Integer read GetInternalLogCount;
     property ExternalLogsCount: Integer read GetExternalLogsCount;
     property OnLog: TLogEvent read fOnLog write fOnLog;
   end;
+
+
+{$IFDEF SimpleLog_Include}
+var
+  LogActive:      Boolean = False;
+  LogFileName:    String = '';
+{$ENDIF}
 
 implementation
 
 uses
   Windows, StrUtils;
+
+{==============================================================================}
+{    TSimpleLog // Console binding                                             }
+{==============================================================================}
+
+type
+  IOFunc = Function(var F: TTextRec): Integer;
+
+const
+  ERR_SUCCESS                 = 0;
+  ERR_UNSUPPORTED_MODE        = 10;
+  ERR_WRITE_FAILED            = 11;
+  ERR_READ_FAILED             = 12;
+  ERR_FLUSH_FUNC_NOT_ASSIGNED = 13;
+
+  UDI_OUTFILE = 1;
+
+//------------------------------------------------------------------------------
+
+Function SLCB_Output(var F: TTextRec): Integer;
+var
+  BytesWritten: LongWord;
+  StrBuffer:    String;
+begin
+If WriteConsole(F.Handle,F.BufPtr,F.BufPos,{%H-}BytesWritten,nil) then
+  begin
+    SetLength(StrBuffer,F.BufPos);
+    Move(F.Buffer,PChar(StrBuffer)^,F.BufPos * SizeOf(Char));
+    TSimpleLog(Addr(F.UserData[UDI_OUTFILE])^).ProtectedAddLog(StrBuffer,0,False);
+    Result := ERR_SUCCESS;
+  end
+else Result := ERR_WRITE_FAILED;
+F.BufPos := 0;
+end;
+
+//------------------------------------------------------------------------------
+
+Function SLCB_Input(var F: TTextRec): Integer;
+var
+  StrBuffer:  String;
+begin
+If ReadConsole(F.Handle,F.BufPtr,F.BufSize,LongWord(F.BufEnd),nil) then
+  begin
+    SetLength(StrBuffer,F.BufEnd);
+    Move(F.Buffer,PChar(StrBuffer)^,F.BufEnd * SizeOf(Char));
+    TSimpleLog(Addr(F.UserData[UDI_OUTFILE])^).ProtectedAddLog(StrBuffer,0,False);
+    Result := ERR_SUCCESS;
+  end
+else Result := ERR_READ_FAILED;
+F.BufPos := 0;
+end;
+
+//------------------------------------------------------------------------------
+
+Function SLCB_Flush(var F: TTextRec): Integer;
+begin
+case F.Mode of
+  fmOutput: begin
+              If Assigned(F.InOutFunc) then IOFunc(F.InOutFunc)(F);
+              Result := ERR_SUCCESS;
+            end;
+  fmInput:  begin
+              F.BufPos := 0;
+              F.BufEnd := 0;
+              Result := ERR_SUCCESS;
+            end;
+else
+  Result := ERR_UNSUPPORTED_MODE;
+end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function SLCB_Open(var F: TTextRec): Integer;
+begin
+case F.Mode of
+  fmOutput: begin
+              F.Handle := GetStdHandle(STD_OUTPUT_HANDLE);
+              F.InOutFunc := @SLCB_Output;
+              Result := ERR_SUCCESS;
+            end;
+  fmInput:  begin
+              F.Handle := GetStdHandle(STD_INPUT_HANDLE);
+              F.InOutFunc := @SLCB_Input;
+              Result := ERR_SUCCESS;
+            end;
+else
+  Result := ERR_UNSUPPORTED_MODE;
+end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function SLCB_Close(var F: TTextRec): Integer;
+begin
+If Assigned(F.FlushFunc) then
+  Result := IOFunc(F.FlushFunc)(F)
+else
+  Result := ERR_FLUSH_FUNC_NOT_ASSIGNED;
+F.Mode := fmClosed;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure AssignSLCB(var T: Text; LogObject: TSimpleLog);
+begin
+with TTextRec(T) do
+  begin
+    Mode := fmClosed;
+  {$IFDEF FPC}
+    LineEnd := sLineBreak;
+  {$ELSE}
+    Flags := tfCRLF;
+  {$ENDIF}
+    BufSize := SizeOf(Buffer);
+    BufPos := 0;
+    BufEnd := 0;
+    BufPtr := @Buffer;
+    OpenFunc := @SLCB_Open;
+    FlushFunc := @SLCB_Flush;
+    CloseFunc := @SLCB_Close;
+    TSimpleLog(Addr(UserData[UDI_OUTFILE])^) := LogObject;
+    Name := '';
+  end;
+end;
 
 {==============================================================================}
 {    TSimpleLog // Class implementation                                        }
@@ -117,35 +259,33 @@ uses
 {------------------------------------------------------------------------------}
 
 const
-  cHeaderLines = '================================================================================';
-  cLineLength  = 80;
+  HeaderLines = '================================================================================';
+  LineLength  = 80;
+
+  ConsoleBindMutexName = 'SimpleLog_C730A534-B332-4A2C-98B1-CE7100DB5589';
 
 //--- default settings ---
   def_TimeFormat             = 'yyyy-mm-dd hh:nn:ss.zzz';
   def_TimeSeparator          = ' //: ';
-  def_ForceTime              = False;
   def_Breaker                = '--------------------------------------------------------------------------------';
-  def_HeaderText             = 'Created by SimpleLog 1.2.4, ©František Milt 2014-10-26';
-  def_ThreadLockedAdd        = False;
+  def_HeaderText             = 'Created by SimpleLog 1.3, Â©2015 FrantiÅ¡ek Milt';
+  def_IndentNewLines         = False;
+  def_ThreadLocked           = False;
+  def_InternalLog            = True;
   def_WriteToConsole         = False;
-  def_InMemoryLog            = True;
   def_StreamToFile           = False;
   def_StreamAppend           = False;
-  def_StreamFileName         = '';
   def_StreamFileAccessRights = fmShareDenyWrite;
+  def_ForceTime              = False;
 
 
 {------------------------------------------------------------------------------}
 {    TSimpleLog // Private routines                                            }
 {------------------------------------------------------------------------------}
 
-Function TSimpleLog.GetExternalLog(Index: Integer): TStrings;
+procedure TSimpleLog.SetWriteToConsole(Value: Boolean);
 begin
-If (Index >= 0) and (Index < fExternalLogs.Count) then
-  Result := TStrings(fExternalLogs[Index])
-else
- raise exception.Create('TSimpleLog.GetExternalLog(Index):' + sLineBreak +
-                        'Index(' + IntToStr(Index) + ') out of bounds.');
+If not fConsoleBinded then fWriteToConsole := Value;
 end;
 
 //------------------------------------------------------------------------------
@@ -161,9 +301,9 @@ If fStreamToFile <> Value then
   else
     begin
       If FileExists(fStreamFileName) then
-        fStreamFile := TFileStream.Create(fStreamFileName,fmOpenReadWrite or StreamFileAccessRights)
+        fStreamFile := TFileStream.Create(fStreamFileName,fmOpenReadWrite or fStreamFileAccessRights)
       else
-        fStreamFile := TFileStream.Create(fStreamFileName,fmCreate or StreamFileAccessRights);
+        fStreamFile := TFileStream.Create(fStreamFileName,fmCreate or fStreamFileAccessRights);
       If fStreamAppend then fStreamFile.Seek(0,soEnd)
         else fStreamFile.Size := 0;
       fStreamToFile := Value;
@@ -174,7 +314,7 @@ end;
 
 procedure TSimpleLog.SetStreamFileName(Value: String);
 begin
-If Value = '' then Value := ExtractFileName(ParamStr(0)) + '_' + GetTimeAsStr(fTimeOfCreation,'YYYY-MM-DD-HH-NN-SS') + '.log';
+If Value = '' then Value := GetDefaultStreamFileName;
 If not AnsiSameText(fStreamFileName,Value) then
   begin
     If fStreamToFile then
@@ -194,9 +334,9 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TSimpleLog.GetInMemoryLogCount: Integer;
+Function TSimpleLog.GetInternalLogCount: Integer;
 begin
-Result := fInMemoryLogObj.Count;
+Result := fInternalLogObj.Count;
 end;
 
 //------------------------------------------------------------------------------
@@ -206,9 +346,27 @@ begin
 Result := fExternalLogs.Count;
 end;
 
+//------------------------------------------------------------------------------
+
+Function TSimpleLog.GetExternalLog(Index: Integer): TStrings;
+begin
+If (Index >= 0) and (Index < fExternalLogs.Count) then
+  Result := TStrings(fExternalLogs[Index])
+else
+ raise exception.CreateFmt('TSimpleLog.GetExternalLog: Index (%d) out of bounds.',[Index]);
+end;
+
 {------------------------------------------------------------------------------}
 {    TSimpleLog // Protected routines                                          }
 {------------------------------------------------------------------------------}
+
+Function TSimpleLog.ReserveConsoleBind: Boolean;
+begin
+fConsoleBindMutex := CreateMutex(nil,False,ConsoleBindMutexName);
+Result := GetLastError = ERROR_SUCCESS;
+end;
+
+//------------------------------------------------------------------------------
 
 Function TSimpleLog.GetCurrentTime: TDateTime;
 begin
@@ -218,7 +376,14 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TSimpleLog.GetTimeAsStr(Time: TDateTime; Format: String = '$'): String;
+Function TSimpleLog.GetDefaultStreamFileName: String;
+begin
+Result := ParamStr(0) + '[' + GetTimeAsStr(fTimeOfCreation,'YYYY-MM-DD-HH-NN-SS') + '].log';
+end;
+
+//------------------------------------------------------------------------------
+
+Function TSimpleLog.GetTimeAsStr(Time: TDateTime; const Format: String = '$'): String;
 begin
 If Format <> '$' then DateTimeToString(Result,Format,Time,fFormatSettings)
   else DateTimeToString(Result,fTimeFormat,Time,fFormatSettings);
@@ -226,19 +391,31 @@ end;
 
 //------------------------------------------------------------------------------
 
-procedure TSimpleLog.ProtectedAddLog(LogText: String; IndentCount: Integer = 0);
+procedure TSimpleLog.DoIndentNewLines(var Str: String; IndentCount: Integer);
+begin
+If (IndentCount > 0) and AnsiContainsStr(Str,sLineBreak) then
+  Str := AnsiReplaceStr(Str,sLineBreak,sLineBreak + StringOfChar(' ',IndentCount));
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TSimpleLog.ProtectedAddLog(LogText: String; IndentCount: Integer = 0; LineBreak: Boolean = True);
 var
   i:    Integer;
   Temp: String;
 begin
 If fIndentNewLines then DoIndentNewLines(LogText,IndentCount);
 If fWriteToConsole and System.IsConsole then WriteLn(LogText);
-If fInMemoryLog then fInMemoryLogObj.Add(LogText);
-For i := 0 to (fExternalLogs.Count - 1) do TStrings(fExternalLogs[i]).Add(LogText);
+If fInternalLog then fInternalLogObj.Add(LogText);
+For i := 0 to Pred(fExternalLogs.Count) do TStringList(fExternalLogs[i]).Add(LogText);
 If fStreamToFile then
   begin
-    Temp := LogText + sLineBreak;
-    fStreamFile.WriteBuffer(PChar(Temp)^, Length(Temp) * SizeOf(Char));
+    If LineBreak then
+      begin
+        Temp := LogText + sLineBreak;
+        fStreamFile.WriteBuffer(PChar(Temp)^, Length(Temp) * SizeOf(Char));
+      end
+    else fStreamFile.WriteBuffer(PChar(LogText)^, Length(LogText) * SizeOf(Char));
   end;
 Inc(fLogCounter);
 If Assigned(fOnLog) then fOnLog(Self,LogText);
@@ -251,24 +428,29 @@ end;
 constructor TSimpleLog.Create;
 begin
 inherited Create;
+{%H-}GetLocaleFormatSettings(LOCALE_USER_DEFAULT,fFormatSettings);
+fTimeFormat := def_TimeFormat;
+fTimeSeparator := def_TimeSeparator;
 fTimeOfCreation := Now;
-fThreadLock := TCriticalSection.Create;
-fInMemoryLogObj := TStringList.Create;
+fBreaker := def_Breaker;
+fHeaderText := def_HeaderText;
+fIndentNewLines := def_IndentNewLines;
+fThreadLocked := def_ThreadLocked;
+fInternalLog := def_InternalLog;
+fWriteToConsole := def_WriteToConsole;
+fStreamToFile := def_StreamToFile;
+fConsoleBinded := False;
+fStreamAppend := def_StreamAppend;
+fStreamFileName := GetDefaultStreamFileName;
+fStreamFileAccessRights := def_StreamFileAccessRights;
+fForceTime := def_ForceTime;
+fForcedTime := Now;
+fLogCounter := 0;
+fThreadLock := SyncObjs.TCriticalSection.Create;
+fInternalLogObj := TStringList.Create;
 fExternalLogs := TObjectList.Create(False);
-TimeFormat := def_TimeFormat;
-TimeSeparator := def_TimeSeparator;
-ForceTime := def_ForceTime;
-ForcedTime := GetCurrentTime;
-Breaker := def_Breaker;
-HeaderText := def_HeaderText;
-ThreadLockedAdd := def_ThreadLockedAdd;
-WriteToConsole := def_WriteToConsole;
-InMemoryLog := def_InMemoryLog;
-StreamToFile := def_StreamToFile;
-StreamAppend := def_StreamAppend;
-StreamFileName := def_StreamFileName;
-StreamFileAccessRights := def_StreamFileAccessRights;
-GetLocaleFormatSettings(LOCALE_USER_DEFAULT,fFormatSettings);
+fConsoleBindMutex := 0;
+fStreamFile := nil;
 end;
 
 //------------------------------------------------------------------------------
@@ -277,17 +459,9 @@ destructor TSimpleLog.Destroy;
 begin
 If Assigned(fStreamFile) then FreeAndNil(fStreamFile);
 fExternalLogs.Free;
-fInMemoryLogObj.Free;
+fInternalLogObj.Free;
 fThreadLock.Free;
 inherited;
-end;
-
-//------------------------------------------------------------------------------
-
-procedure TSimpleLog.DoIndentNewLines(var Str: String; IndentCount: Integer);
-begin
-If (IndentCount > 0) and AnsiContainsStr(Str,sLineBreak) then
-  Str := AnsiReplaceStr(Str,sLineBreak,sLineBreak + StringOfChar(' ',IndentCount));
 end;
 
 //------------------------------------------------------------------------------
@@ -306,19 +480,28 @@ end;
 
 //------------------------------------------------------------------------------
 
-procedure TSimpleLog.AddLog(Text: String);
+procedure TSimpleLog.AddLogNoTime(const Text: String);
 begin
-AddLogForceTime(Text,GetCurrentTime);
+If fThreadLocked then
+  begin
+    fThreadLock.Enter;
+    try
+      ProtectedAddLog(Text);
+    finally
+      fThreadLock.Leave;
+    end;
+  end
+else ProtectedAddLog(Text);
 end;
 
 //------------------------------------------------------------------------------
 
-procedure TSimpleLog.AddLogForceTime(Text: String; Time: TDateTime);
+procedure TSimpleLog.AddLogTime(const Text: String; Time: TDateTime);
 var
   TimeStr:  String;
 begin
 TimeStr := GetTimeAsStr(Time) + fTimeSeparator;
-If fThreadLockedAdd then
+If fThreadLocked then
   begin
     fThreadLock.Enter;
     try
@@ -332,18 +515,9 @@ end;
 
 //------------------------------------------------------------------------------
 
-procedure TSimpleLog.AddLogNoTime(Text: String);
+procedure TSimpleLog.AddLog(const Text: String);
 begin
-If fThreadLockedAdd then
-  begin
-    fThreadLock.Enter;
-    try
-      ProtectedAddLog(Text);
-    finally
-      fThreadLock.Leave;
-    end;
-  end
-else ProtectedAddLog(Text);
+AddLogTime(Text,GetCurrentTime);
 end;
 
 //------------------------------------------------------------------------------
@@ -399,10 +573,9 @@ TempStrings := TStringList.Create;
 try
   TempStrings.Text := HeaderText;
   For i := 0 to (TempStrings.Count - 1) do
-    If Length(TempStrings[i]) < cLineLength then
-      TempStrings[i] := StringOfChar(' ', (cLineLength - Length(TempStrings[i])) div 2) +
-                        TempStrings[i];
-  AddLogNoTime(cHeaderLines + sLineBreak + TempStrings.Text + cHeaderLines);
+    If Length(TempStrings[i]) < LineLength then
+      TempStrings[i] := StringOfChar(' ', (LineLength - Length(TempStrings[i])) div 2) + TempStrings[i];
+  AddLogNoTime(HeaderLines + sLineBreak + TempStrings.Text + HeaderLines);
 finally
   TempStrings.Free;
 end;
@@ -418,52 +591,49 @@ end;
 
 //------------------------------------------------------------------------------
 
-procedure TSimpleLog.UnforceTimeSet;
+Function TSimpleLog.InternalLogGetLog(LogIndex: Integer): String;
 begin
-fForceTime := False;
+If (LogIndex >= 0) and (LogIndex < fInternalLogObj.Count) then
+  Result := fInternalLogObj[LogIndex]
+else
+  Result := '';
 end;
 
 //------------------------------------------------------------------------------
 
-Function TSimpleLog.InMemoryLogGetLog(LogIndex: Integer): String;
+Function TSimpleLog.InternalLogGetAsText: String;
 begin
-If (LogIndex < 0) or (LogIndex >= fInMemoryLogObj.Count) then Result := ''
-  else Result := fInMemoryLogObj[LogIndex];
-end;
-
-Function TSimpleLog.InMemoryLogGetAsText: String;
-begin
-Result := fInMemoryLogObj.Text;
+Result := fInternalLogObj.Text;
 end;
    
 //------------------------------------------------------------------------------
 
-procedure TSimpleLog.InMemoryLogClear;
+procedure TSimpleLog.InternalLogClear;
 begin
-fInMemoryLogObj.Clear;
+fInternalLogObj.Clear;
 end;
   
 //------------------------------------------------------------------------------
 
-Function TSimpleLog.InMemoryLogSaveToFile(FileName: String; Append: Boolean = False): Boolean;
+Function TSimpleLog.InternalLogSaveToFile(const FileName: String; Append: Boolean = False): Boolean;
 var
   FileStream:   TFileStream;
-  StringBuffer: String;
+  StringBuffer: AnsiString;
 begin
-Result := True;
 try
   If FileExists(FileName) then
     FileStream := TFileStream.Create(FileName,fmOpenReadWrite or fmShareDenyWrite)
   else
     FileStream := TFileStream.Create(FileName,fmCreate or fmShareDenyWrite);
   try
-    If not Append then FileStream.Size := 0;
-    StringBuffer := fInMemoryLogObj.Text;
-    FileStream.Seek(0,soEnd);
-    FileStream.WriteBuffer(PChar(StringBuffer)^,Length(StringBuffer) * SizeOf(Char));
+    If Append then FileStream.Seek(0,soEnd)
+      else FileStream.Size := 0;
+    StringBuffer := fInternalLogObj.Text;
+    FileStream.WriteBuffer(PAnsiChar(StringBuffer)^,Length(StringBuffer) * SizeOf(AnsiChar));
   finally
     FileStream.Free;
   end;
+  Result := True;
 except
   Result := False;
 end;
@@ -471,28 +641,60 @@ end;
     
 //------------------------------------------------------------------------------
 
-Function TSimpleLog.InMemoryLogLoadFromFile(FileName: String; Append: Boolean = False): Boolean;
+Function TSimpleLog.InternalLogLoadFromFile(const FileName: String; Append: Boolean = False): Boolean;
 var
   FileStream:   TFileStream;
-  StringBuffer: String;
+  StringBuffer: AnsiString;
 begin
-Result := True;
 try
   FileStream := TFileStream.Create(FileName,fmOpenRead or fmShareDenyWrite);
   try
-    If not Append then fInMemoryLogObj.Clear;
+    If not Append then fInternalLogObj.Clear;
     FileStream.Position := 0;
-    SetLength(StringBuffer,FileStream.Size div SizeOf(Char));
-    FileStream.ReadBuffer(PChar(StringBuffer)^,Length(StringBuffer) * SizeOf(Char));
-    fInMemoryLogObj.Text := fInMemoryLogObj.Text + StringBuffer;
+    SetLength(StringBuffer,FileStream.Size div SizeOf(AnsiChar));
+    FileStream.ReadBuffer(PAnsiChar(StringBuffer)^,Length(StringBuffer) * SizeOf(AnsiChar));
+    fInternalLogObj.Text := fInternalLogObj.Text + StringBuffer;
   finally
     FileStream.Free;
   end;
+  Result := True;
 except
   Result := False;
 end;
 end;
-    
+
+//------------------------------------------------------------------------------
+
+Function TSimpleLog.BindConsole: Boolean;
+begin
+If not fConsoleBinded and System.IsConsole and ReserveConsoleBind then
+  begin
+    fWriteToConsole := False;
+    AssignSLCB(ErrOutput,Self);
+    Rewrite(ErrOutput);
+    AssignSLCB(Output,Self);
+    Rewrite(Output);
+    AssignSLCB(Input,Self);
+    Reset(Input);
+    fConsoleBinded := True;
+  end;
+Result := fConsoleBinded;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TSimpleLog.UnbindConsole;
+begin
+If fConsoleBinded then
+  begin
+    Close(Input);
+    Close(Output);
+    Close(ErrOutput);
+    fConsoleBinded := False;
+    FileClose(fConsoleBindMutex); { *Converted from CloseHandle* }
+  end;
+end;
+
 //------------------------------------------------------------------------------
 
 Function TSimpleLog.ExternalLogAdd(ExternalLog: TStrings): Integer;
@@ -510,12 +712,9 @@ end;
 //------------------------------------------------------------------------------
 
 Function TSimpleLog.ExternalLogRemove(ExternalLog: TStrings): Integer;
-var
-  Index: Integer;
 begin
-Result := -1;
-Index := fExternalLogs.IndexOf(ExternalLog);
-If Index >= 0 then Result := fExternalLogs.Remove(ExternalLog);
+Result := fExternalLogs.IndexOf(ExternalLog);
+If Result >= 0 then ExternalLogDelete(Result);
 end;
     
 //------------------------------------------------------------------------------
@@ -525,8 +724,10 @@ begin
 If (Index >= 0) and (Index < fExternalLogs.Count) then
   fExternalLogs.Delete(Index)
 else
- raise exception.Create('TSimpleLog.ExternalLogDelete(Index):' + sLineBreak +
-                        'Index(' + IntToStr(Index) + ') out of bounds.');
+ raise exception.CreateFmt('TSimpleLog.ExternalLogDelete: Index (%d) out of bounds.',[Index]);
 end;
 
+{$IFNDEF SimpleLog_Include}
+{$WARNINGS OFF}
 end.
+{$ENDIF}
