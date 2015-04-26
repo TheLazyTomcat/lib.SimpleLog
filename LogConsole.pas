@@ -9,9 +9,9 @@
 
 SimpleLog - LogConsole
 
-©František Milt 2015-02-27
+©František Milt 2015-04-26
 
-Version 1.3
+Version 1.3.1
 
 ===============================================================================}
 unit LogConsole;
@@ -23,6 +23,8 @@ unit LogConsole;
 
 var
   LogObject:  TSimpleLog = nil;
+
+//------------------------------------------------------------------------------
   
 procedure Initialize;
 begin
@@ -40,11 +42,15 @@ If IsConsole then
   end;
 end;
 
+//------------------------------------------------------------------------------
+
 procedure Finalize;
 begin
 If Assigned(LogObject) then LogObject.UnbindConsole;
 FreeAndNil(LogObject);
 end;
+
+//------------------------------------------------------------------------------
 
 initialization
   Initialize;

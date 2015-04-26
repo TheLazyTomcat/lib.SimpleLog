@@ -9,9 +9,9 @@
 
 SimpleLog
 
-©František Milt 2015-02-27
+©František Milt 2015-04-26
 
-Version 1.3
+Version 1.3.1
 
 ===============================================================================}
 {$IFNDEF SimpleLog_Include}
@@ -700,7 +700,7 @@ If fConsoleBinded then
     Close(Output);
     Close(ErrOutput);
     fConsoleBinded := False;
-    FileClose(fConsoleBindMutex); { *Converted from CloseHandle* }
+    CloseHandle(fConsoleBindMutex);
   end;
 end;
 
