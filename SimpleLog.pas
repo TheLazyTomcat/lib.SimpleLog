@@ -9,9 +9,9 @@
 
 SimpleLog
 
-©František Milt 2015-04-26
+©František Milt 2015-05-06
 
-Version 1.3.1
+Version 1.3.2
 
 ===============================================================================}
 {$IFNDEF SimpleLog_Include}
@@ -416,7 +416,7 @@ begin
 If fIndentNewLines then DoIndentNewLines(LogText,IndentCount);
 If fWriteToConsole and System.IsConsole then WriteLn(LogText);
 If fInternalLog then fInternalLogObj.Add(LogText);
-For i := 0 to Pred(fExternalLogs.Count) do TStringList(fExternalLogs[i]).Add(LogText);
+For i := 0 to Pred(fExternalLogs.Count) do TStrings(fExternalLogs[i]).Add(LogText);
 If fStreamToFile then
   begin
     If LineBreak then
