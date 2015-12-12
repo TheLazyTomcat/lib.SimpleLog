@@ -9,9 +9,9 @@
 
 SimpleLog - LogConsole
 
-©František Milt 2015-04-26
+©František Milt 2015-12-12
 
-Version 1.3.1
+Version 1.3.3
 
 ===============================================================================}
 unit LogConsole;
