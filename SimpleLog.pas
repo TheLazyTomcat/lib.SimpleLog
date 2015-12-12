@@ -18,6 +18,10 @@ Version 1.3.3
 unit SimpleLog;
 {$ENDIF}
 
+{$IF not(defined(MSWINDOWS) or defined(WINDOWS))}
+  {$MESSAGE FATAL 'Unsupported operating system.'}
+{$IFEND}
+
 interface
 
 uses
