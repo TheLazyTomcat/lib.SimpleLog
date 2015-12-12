@@ -9,9 +9,9 @@
 
 SimpleLog
 
-©František Milt 2015-05-06
+©František Milt 2015-12-12
 
-Version 1.3.2
+Version 1.3.3
 
 ===============================================================================}
 {$IFNDEF SimpleLog_Include}
@@ -53,7 +53,7 @@ type
     fInternalLogObj:          TStringList;
     fExternalLogs:            TObjectList;
     fStreamFile:              TFileStream;
-    fConsoleBindMutex:        THandle;
+    fConsoleBindFlag:         Integer;
     fOnLog:                   TLogEvent;
     procedure SetWriteToConsole(Value: Boolean);    
     procedure SetStreamToFile(Value: Boolean);
@@ -148,11 +148,14 @@ const
 
   UDI_OUTFILE = 1;
 
+  CBF_LOCKED   = 1;
+  CBF_UNLOCKED = 0;
+
 //------------------------------------------------------------------------------
 
 Function SLCB_Output(var F: TTextRec): Integer;
 var
-  BytesWritten: LongWord;
+  BytesWritten: DWord;
   StrBuffer:    String;
 begin
 If WriteConsole(F.Handle,F.BufPtr,F.BufPos,{%H-}BytesWritten,nil) then
@@ -170,7 +173,7 @@ end;
 
 Function SLCB_Input(var F: TTextRec): Integer;
 var
-  BytesRead:  LongWord;
+  BytesRead:  DWord;
   StrBuffer:  String;
 begin
 If ReadConsole(F.Handle,F.BufPtr,F.BufSize,{%H-}BytesRead,nil) then
@@ -271,8 +274,6 @@ const
   HeaderLines = '================================================================================';
   LineLength  = 80;
 
-  ConsoleBindMutexName = 'SimpleLog_C730A534-B332-4A2C-98B1-CE7100DB5589';
-
 //--- default settings ---
   def_TimeFormat             = 'yyyy-mm-dd hh:nn:ss.zzz';
   def_TimeSeparator          = ' //: ';
@@ -371,8 +372,7 @@ end;
 
 Function TSimpleLog.ReserveConsoleBind: Boolean;
 begin
-fConsoleBindMutex := CreateMutex(nil,False,ConsoleBindMutexName);
-Result := GetLastError = ERROR_SUCCESS;
+Result := InterlockedExchange(fConsoleBindFlag,CBF_LOCKED) = CBF_UNLOCKED;
 end;
 
 //------------------------------------------------------------------------------
@@ -458,7 +458,7 @@ fLogCounter := 0;
 fThreadLock := SyncObjs.TCriticalSection.Create;
 fInternalLogObj := TStringList.Create;
 fExternalLogs := TObjectList.Create(False);
-fConsoleBindMutex := 0;
+fConsoleBindFlag := CBF_UNLOCKED;
 fStreamFile := nil;
 end;
 
@@ -700,7 +700,7 @@ If fConsoleBinded then
     Close(Output);
     Close(ErrOutput);
     fConsoleBinded := False;
-    CloseHandle(fConsoleBindMutex);
+    InterlockedExchange(fConsoleBindFlag,CBF_UNLOCKED);
   end;
 end;
 
