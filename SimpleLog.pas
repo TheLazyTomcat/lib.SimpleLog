@@ -9,9 +9,9 @@
 
 SimpleLog
 
-©František Milt 2016-03-01
+©František Milt 2016-03-25
 
-Version 1.3.4
+Version 1.3.5
 
 ===============================================================================}
 {$IFNDEF SimpleLog_Include}
@@ -430,7 +430,11 @@ end;
 
 Function TSimpleLog.GetDefaultStreamFileName: String;
 begin
+{$IF Defined(FPC) and not Defined(Unicode) and (FPC_FULLVERSION < 20701)}
+Result := SysToUTF8(ParamStr(0)) + '[' + GetTimeAsStr(fTimeOfCreation,'YYYY-MM-DD-HH-NN-SS') + '].log';
+{$ELSE}
 Result := ParamStr(0) + '[' + GetTimeAsStr(fTimeOfCreation,'YYYY-MM-DD-HH-NN-SS') + '].log';
+{$IFEND}
 end;
 
 //------------------------------------------------------------------------------
