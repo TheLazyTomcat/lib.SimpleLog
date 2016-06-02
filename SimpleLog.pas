@@ -40,7 +40,11 @@ type
     fTimeSeparator:           String;
     fTimeOfCreation:          TDateTime;
     fBreaker:                 String;
-    fHeaderText:              String;
+    fTimeStamp:               String;
+    fStartStamp:              String;
+    fEndStamp:                String;
+    fAppendStamp:             String;
+    fHeader:                  String;
     fIndentNewLines:          Boolean;
     fThreadLocked:            Boolean;
     fInternalLog:             Boolean;
@@ -106,7 +110,11 @@ type
     property TimeSeparator: String read fTimeSeparator write fTimeSeparator;
     property TimeOfCreation: TDateTime read fTimeOfCreation;
     property Breaker: String read fBreaker write fBreaker;
-    property HeaderText: String read fHeaderText write fHeaderText;
+    property TimeStamp: String read fTimeStamp write fTimeStamp;
+    property StartStamp: String read fStartStamp write fStartStamp;
+    property EndStamp: String read fEndStamp write fEndStamp;
+    property AppendStamp: String read fAppendStamp write fAppendStamp;
+    property Header: String read fHeader write fHeader;
     property IndentNewLines: Boolean read fIndentNewLines write fIndentNewLines;
     property ThreadLocked: Boolean read fThreadLocked write fThreadLocked;
     property InternalLog: Boolean read fInternalLog write fInternalLog;
@@ -301,7 +309,13 @@ const
   def_TimeFormat             = 'yyyy-mm-dd hh:nn:ss.zzz';
   def_TimeSeparator          = ' //: ';
   def_Breaker                = '--------------------------------------------------------------------------------';
-  def_HeaderText             = 'Created by SimpleLog 1.3, (c)2015 Frantisek Milt';
+  def_TimeStamp              = def_Breaker + sLineBreak +  'TimeStamp: %s' + sLineBreak + def_Breaker;
+  def_StartStamp             = def_Breaker + sLineBreak +  '%s - Starting log' + sLineBreak + def_Breaker;
+  def_EndStamp               = def_Breaker + sLineBreak +  '%s - Ending log' + sLineBreak + def_Breaker;
+  def_AppendStamp            = def_Breaker + sLineBreak +  '%s - Appending log' + sLineBreak + def_Breaker;
+  def_Header                 = HeaderLines + sLineBreak +
+                               '              Created by SimpleLog 1.3, (c)2015-2016 Frantisek Milt' +
+                               sLineBreak + HeaderLines;
   def_IndentNewLines         = False;
   def_ThreadLocked           = False;
   def_InternalLog            = True;
@@ -489,7 +503,11 @@ fTimeFormat := def_TimeFormat;
 fTimeSeparator := def_TimeSeparator;
 fTimeOfCreation := Now;
 fBreaker := def_Breaker;
-fHeaderText := def_HeaderText;
+fTimeStamp := def_TimeStamp;
+fStartStamp := def_StartStamp;
+fEndStamp := def_EndStamp;
+fAppendStamp := def_AppendStamp;
+fHeader := def_Header;
 fIndentNewLines := def_IndentNewLines;
 fThreadLocked := def_ThreadLocked;
 fInternalLog := def_InternalLog;
@@ -594,47 +612,35 @@ end;
 
 procedure TSimpleLog.AddTimeStamp;
 begin
-AddLogNoTime(fBreaker + sLineBreak + 'TimeStamp: ' + GetTimeAsStr(GetCurrentTime) + sLineBreak + fBreaker);
+AddLogNoTime(Format(fTimeStamp,[GetTimeAsStr(GetCurrentTime)]));
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TSimpleLog.AddStartStamp;
 begin
-AddLogNoTime(fBreaker + sLineBreak + GetTimeAsStr(GetCurrentTime) + ' - Starting log...' + sLineBreak + fBreaker);
+AddLogNoTime(Format(fStartStamp,[GetTimeAsStr(GetCurrentTime)]));
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TSimpleLog.AddEndStamp;
 begin
-AddLogNoTime(fBreaker + sLineBreak + GetTimeAsStr(GetCurrentTime) + ' - Ending log.' + sLineBreak + fBreaker);
+AddLogNoTime(Format(fEndStamp,[GetTimeAsStr(GetCurrentTime)]));
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TSimpleLog.AddAppendStamp;
 begin
-AddLogNoTime(fBreaker + sLineBreak + GetTimeAsStr(GetCurrentTime) + ' - Appending log...' + sLineBreak + fBreaker);
+AddLogNoTime(Format(fAppendStamp,[GetTimeAsStr(GetCurrentTime)]));
 end;
  
 //------------------------------------------------------------------------------
 
 procedure TSimpleLog.AddHeader;
-var
-  TempStrings:  TStringList;
-  i:            Integer;
 begin
-TempStrings := TStringList.Create;
-try
-  TempStrings.Text := HeaderText;
-  For i := 0 to (TempStrings.Count - 1) do
-    If Length(TempStrings[i]) < LineLength then
-      TempStrings[i] := StringOfChar(' ', (LineLength - Length(TempStrings[i])) div 2) + TempStrings[i];
-  AddLogNoTime(HeaderLines + sLineBreak + TempStrings.Text + HeaderLines);
-finally
-  TempStrings.Free;
-end;
+AddLogNoTime(fHeader);
 end;
 
 //------------------------------------------------------------------------------
