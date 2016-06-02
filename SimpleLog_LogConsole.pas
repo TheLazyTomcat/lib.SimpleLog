@@ -7,14 +7,14 @@
 -------------------------------------------------------------------------------}
 {===============================================================================
 
-SimpleLog - LogConsole
+  SimpleLog - LogConsole
 
-©František Milt 2016-03-01
+  ©František Milt 2016-06-02
 
-Version 1.3.4
+  Version 1.3.6
 
 ===============================================================================}
-unit LogConsole;
+unit SimpleLog_LogConsole;
 
 {$DEFINE SimpleLog_Include}
   {$INCLUDE '.\SimpleLog.pas'}

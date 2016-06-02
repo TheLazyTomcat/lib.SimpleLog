@@ -7,11 +7,11 @@
 -------------------------------------------------------------------------------}
 {===============================================================================
 
-SimpleLog
+  SimpleLog
 
-©František Milt 2016-03-25
+  ©František Milt 2016-06-02
 
-Version 1.3.5
+  Version 1.3.6
 
 ===============================================================================}
 {$IFNDEF SimpleLog_Include}
@@ -119,7 +119,7 @@ type
     property ForceTime: Boolean read fForceTime write fForceTime;
     property ForcedTime: TDateTIme read fForcedTime write fForcedTime;
     property LogCounter: Integer read fLogCounter;
-    property InMemoryLogCount: Integer read GetInternalLogCount;
+    property InternalLogCount: Integer read GetInternalLogCount;
     property ExternalLogsCount: Integer read GetExternalLogsCount;
     property OnLog: TLogEvent read fOnLog write fOnLog;
   end;
