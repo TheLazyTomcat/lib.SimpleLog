@@ -22,6 +22,12 @@ unit SimpleLog;
   {$MESSAGE FATAL 'Unsupported operating system.'}
 {$IFEND}
 
+{$IFDEF FPC}
+  {$MODE ObjFPC}{$H+}
+  // Activate symbol BARE_FPC if you want to compile this unit outside of Lazarus.
+  {.$DEFINE BARE_FPC}
+{$ENDIF}
+
 interface
 
 uses
@@ -152,7 +158,7 @@ implementation
 
 uses
   Windows, StrUtils
-  {$IF Defined(FPC) and not Defined(Unicode)}
+  {$IF Defined(FPC) and not Defined(Unicode) and not Defined(BARE_FPC)}
   (*
     If compiler throws error that LazUTF8 unit cannot be found, you have to
     add LazUtils to required packages (Project > Project Inspector).
@@ -346,12 +352,12 @@ If fStreamToFile <> Value then
     end
   else
     begin
-    {$IF Defined(FPC) and not Defined(Unicode) and (FPC_FULLVERSION < 20701)}
+    {$IF Defined(FPC) and not Defined(Unicode) and (FPC_FULLVERSION < 20701) and not Defined(BARE_FPC)}
       If FileExistsUTF8(fStreamFileName) then
     {$ELSE}
       If FileExists(fStreamFileName) then
     {$IFEND}
-    {$IF Defined(FPC) and not Defined(Unicode)}
+    {$IF Defined(FPC) and not Defined(Unicode) and not Defined(BARE_FPC)}
         fStreamFile := TFileStream.Create(UTF8ToSys(fStreamFileName),fmOpenReadWrite or fStreamFileAccessRights)
       else
         fStreamFile := TFileStream.Create(UTF8ToSys(fStreamFileName),fmCreate or fStreamFileAccessRights);
@@ -377,12 +383,12 @@ If not AnsiSameText(fStreamFileName,Value) then
       begin
         fStreamFileName := Value;
         FreeAndNil(fStreamFile);
-      {$IF Defined(FPC) and not Defined(Unicode) and (FPC_FULLVERSION < 20701)}
+      {$IF Defined(FPC) and not Defined(Unicode) and (FPC_FULLVERSION < 20701) and not Defined(BARE_FPC)}
         If FileExistsUTF8(fStreamFileName) then
       {$ELSE}
         If FileExists(fStreamFileName) then
       {$IFEND}
-      {$IF Defined(FPC) and not Defined(Unicode)}
+      {$IF Defined(FPC) and not Defined(Unicode) and not Defined(BARE_FPC)}
           fStreamFile := TFileStream.Create(UTF8ToSys(fStreamFileName),fmOpenReadWrite or fStreamFileAccessRights)
         else
           fStreamFile := TFileStream.Create(UTF8ToSys(fStreamFileName),fmCreate or fStreamFileAccessRights);
@@ -443,7 +449,7 @@ end;
 
 Function TSimpleLog.GetDefaultStreamFileName: String;
 begin
-{$IF Defined(FPC) and not Defined(Unicode) and (FPC_FULLVERSION < 20701)}
+{$IF Defined(FPC) and not Defined(Unicode) and not Defined(BARE_FPC)}
 Result := SysToUTF8(ParamStr(0)) + '[' + GetTimeAsStr(fTimeOfCreation,'YYYY-MM-DD-HH-NN-SS') + '].log';
 {$ELSE}
 Result := ParamStr(0) + '[' + GetTimeAsStr(fTimeOfCreation,'YYYY-MM-DD-HH-NN-SS') + '].log';
@@ -682,12 +688,12 @@ var
   StringBuffer: String;
 begin
 try
-{$IF Defined(FPC) and not Defined(Unicode) and (FPC_FULLVERSION < 20701)}
+{$IF Defined(FPC) and not Defined(Unicode) and (FPC_FULLVERSION < 20701) and not Defined(BARE_FPC)}
   If FileExistsUTF8(FileName) then
 {$ELSE}
   If FileExists(FileName) then
 {$IFEND}
-{$IF Defined(FPC) and not Defined(Unicode)}
+{$IF Defined(FPC) and not Defined(Unicode) and not Defined(BARE_FPC)}
     FileStream := TFileStream.Create(UTF8ToSys(FileName),fmOpenReadWrite or fmShareDenyWrite)
   else
     FileStream := TFileStream.Create(UTF8ToSys(FileName),fmCreate or fmShareDenyWrite);
@@ -718,7 +724,7 @@ var
   StringBuffer: String;
 begin
 try
-{$IF Defined(FPC) and not Defined(Unicode)}
+{$IF Defined(FPC) and not Defined(Unicode) and not Defined(BARE_FPC)}
   FileStream := TFileStream.Create(UTF8ToSys(FileName),fmOpenRead or fmShareDenyWrite);
 {$ELSE}
   FileStream := TFileStream.Create(FileName,fmOpenRead or fmShareDenyWrite);
