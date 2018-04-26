@@ -171,6 +171,7 @@ uses
 
 {$IFDEF FPC_DisableWarns}
   {$WARN 5057 OFF} // Local variable "$1" does not seem to be initialized
+  {$WARN 5092 OFF} // Variable "$1" of a managed type does not seem to be initialized  
 {$ENDIF}
 
 Function _FileExists(const FileName: String): Boolean;
