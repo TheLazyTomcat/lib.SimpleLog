@@ -9,9 +9,9 @@
 
   SimpleLog - LogConsole
 
-  ©František Milt 2017-07-17
+  ©František Milt 2018-10-22
 
-  Version 1.3.8
+  Version 1.3.9
 
   Dependencies:
     StrRect - github.com/ncs-sniper/Lib.StrRect

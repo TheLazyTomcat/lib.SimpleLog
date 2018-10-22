@@ -9,9 +9,9 @@
 
   SimpleLog
 
-  ©František Milt 2017-07-17
+  ©František Milt 2018-10-22
 
-  Version 1.3.8
+  Version 1.3.9
 
   Dependencies:
     StrRect - github.com/ncs-sniper/Lib.StrRect
@@ -45,8 +45,6 @@ unit SimpleLog;
 {$ELSE}
   {$UNDEF UTF8Wrappers}
 {$IFEND}
-
-{$TYPEINFO ON}
 
 interface
 
@@ -131,7 +129,6 @@ type
     procedure ExternalLogDelete(Index: Integer); virtual;
     property FormatSettings: TFormatSettings read fFormatSettings write fFormatSettings;
     property ExternalLogs[Index: Integer]: TStrings read GetExternalLog; default;
-  published
     property TimeFormat: String read fTimeFormat write fTimeFormat;
     property TimeSeparator: String read fTimeSeparator write fTimeSeparator;
     property TimeOfCreation: TDateTime read fTimeOfCreation;
