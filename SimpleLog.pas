@@ -8,6 +8,9 @@ unit SimpleLog;
   {$MESSAGE FATAL 'Unsupported operating system.'}
 {$IFEND}
 
+{$IFDEF FPC}
+  {$MODE ObjFPC}
+{$ENDIF}
 {$H+}
 
 {$IFOPT Q+}
@@ -42,6 +45,17 @@ type
     IndentNewLines:     Boolean;
   end;
 
+  TSLStrings = record
+    BreakerCharThin:  Char;
+    BreakerCharThick: Char;
+    TimeStamp:        String;
+    StartStamp:       String;
+    EndStamp:         String;
+    AppendStamp:      String;
+    HeaderText:       String;
+    LineLength:       Integer;
+  end;
+
 {
   TSLExternalLogItem is for internal use only.
 }
@@ -56,6 +70,7 @@ type
   protected
     // settings and info fields
     fSettings:            TSLSettings;
+    fStrings:             TSLStrings;
     fTimeOfCreation:      TDateTime;
     fLogCounter:          UInt32;
     // log output fields
@@ -84,6 +99,7 @@ type
     Function GetTime: TDateTime; virtual;
     Function GetTimeString(Time: TDateTime): String; virtual;
     Function GetIndentedString(const Str: String; IndentCount: Integer): String; virtual;
+    Function GetStampText(const Str: String): String;
     procedure WriteLogToOutputs(const Str: String; LineBreakInStreams: Boolean); virtual;
     procedure ProcessConsoleLog(const Str: String); virtual;
     procedure ProcessLocalLog(const Str: String; IndentCount: Integer = 0); virtual;
@@ -120,6 +136,16 @@ type
     procedure AddLogNoTime(const Text: String); virtual;
     procedure AddLogTime(const Text: String; Time: TDateTime); virtual;
     procedure AddLog(const Text: String); virtual;
+
+    procedure AddEmpty; virtual;
+    procedure AddBreaker; virtual;
+    procedure AddBreakerThin; virtual;
+    procedure AddBreakerThick; virtual;
+    procedure AddTimeStamp; virtual;
+    procedure AddStartStamp; virtual;
+    procedure AddEndStamp; virtual;
+    procedure AddAppendStamp; virtual;
+    procedure AddHeader; virtual;
     // console binding
 
     // settings properties
@@ -133,6 +159,16 @@ type
     property ForceTimeAutoreset: Boolean read fSettings.ForceTimeAutoreset write fSettings.ForceTimeAutoreset;    
     property ForcedTime: TDateTime read fSettings.ForcedTime write fSettings.ForcedTime;
     property IndentNewLines: Boolean read fSettings.IndentNewLines write fSettings.IndentNewLines;
+    // strings properties
+    property Strings: TSLStrings read fStrings;
+    property BreakerThin: Char read fStrings.BreakerCharThin write fStrings.BreakerCharThin;
+    property BreakerThick: Char read fStrings.BreakerCharThick write fStrings.BreakerCharThick;
+    property TimeStamp: String read fStrings.TimeStamp write fStrings.TimeStamp;
+    property StartStamp: String read fStrings.StartStamp write fStrings.StartStamp;
+    property EndStamp: String read fStrings.EndStamp write fStrings.EndStamp;
+    property AppendStamp: String read fStrings.AppendStamp write fStrings.AppendStamp;
+    property HeaderText: String read fStrings.HeaderText write fStrings.HeaderText;
+    property LineLength: Integer read fStrings.LineLength write fStrings.LineLength;
     // informative properties
     property TimeOfCreation: TDateTime read fTimeOfCreation;
     property LogCounter: UInt32 read fLogCounter;
@@ -179,6 +215,24 @@ FormatSettings := DefaultFormatSettings;
 end;
 
 //==============================================================================
+
+const
+  SL_DEFSTR_TIMEFORMAT    = 'yyyy-mm-dd hh:nn:ss.zzz';
+  SL_DEFSTR_TIMESEPARATOR = ' //: ';
+
+  SL_DEFSTR_BREAKERCHAR_THIN  = '-';
+  SL_DEFSTR_BREAKERCHAR_THICK = '=';
+
+  SL_DEFSTR_LINELENGTH = 80;
+
+  SL_DEFSTR_TIMESTAMP   = '%s';
+  SL_DEFSTR_STARTSTAMP  = '%s - Starting log';
+  SL_DEFSTR_ENDSTAMP    = '%s - Ending log';
+  SL_DEFSTR_APPENDSTAMP = '%s - Appending log';
+
+  SL_DEFSTR_HEADERTEXT = UTF8String('SimpleLog 2.0, '#$C2#$A9'2015-2021 Franti'#$C5#$A1'ek Milt');
+
+//------------------------------------------------------------------------------
 
 Function TSimpleLog.GetExternalLog(Index: Integer): TStrings;
 begin
@@ -240,12 +294,21 @@ begin
 // init settings
 fSettings.LogOutputs := [loInternal];
 InitFormatSettings(fSettings.FormatSettings);
-fSettings.TimeFormat := 'yyyy-mm-dd hh:nn:ss.zzz';
-fSettings.TimeSeparator := ' //: ';
+fSettings.TimeFormat := SL_DEFSTR_TIMEFORMAT;
+fSettings.TimeSeparator := SL_DEFSTR_TIMESEPARATOR;
 fSettings.ForceTime := False;
 fSettings.ForceTimeAutoreset := False;
 fSettings.ForcedTime := Now;
 fSettings.IndentNewLines := False;
+// init strings
+fStrings.BreakerCharThin := SL_DEFSTR_BREAKERCHAR_THIN;
+fStrings.BreakerCharThick := SL_DEFSTR_BREAKERCHAR_THICK;
+fStrings.TimeStamp := SL_DEFSTR_TIMESTAMP;
+fStrings.StartStamp := SL_DEFSTR_STARTSTAMP;
+fStrings.EndStamp := SL_DEFSTR_ENDSTAMP;
+fStrings.AppendStamp := SL_DEFSTR_APPENDSTAMP;
+fStrings.HeaderText := UTF8ToStr(SL_DEFSTR_HEADERTEXT);
+fStrings.LineLength := 80;
 // init other stuff
 fTimeOfCreation := Now;
 fLogCounter := 0;
@@ -306,6 +369,23 @@ If IndentCount > 0 then
 else
   Result := Str;
 {$message 'rework'}
+  {
+    folloving are all recognized linebreak sequences:
+
+      #10#13
+      #13#10
+      #10 not followed by #13 or #0
+      #13 not followed by #10 or #0
+      #0 not followed by #10 or #13
+  }
+end;
+
+//------------------------------------------------------------------------------
+
+Function TSimpleLog.GetStampText(const Str: String): String;
+begin
+Result := StringOfChar(fStrings.BreakerCharThin,fStrings.LineLength) + sLineBreak +
+  Str + sLineBreak + StringOfChar(fStrings.BreakerCharThin,fStrings.LineLength);
 end;
 
 //------------------------------------------------------------------------------
@@ -656,6 +736,76 @@ end;
 procedure TSimpleLog.AddLog(const Text: String);
 begin
 AddLogTime(Text,GetTime);
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TSimpleLog.AddEmpty;
+begin
+AddLogNoTime('');
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TSimpleLog.AddBreaker;
+begin
+AddLogNoTime(StringOfChar(fStrings.BreakerCharThin,fStrings.LineLength));
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TSimpleLog.AddBreakerThin;
+begin
+AddLogNoTime(StringOfChar(fStrings.BreakerCharThin,fStrings.LineLength));
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TSimpleLog.AddBreakerThick;
+begin
+AddLogNoTime(StringOfChar(fStrings.BreakerCharThick,fStrings.LineLength));
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TSimpleLog.AddTimeStamp;
+begin
+AddLogNoTime(Format(GetStampText(fStrings.TimeStamp),[GetTimeString(GetTime)]));
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TSimpleLog.AddStartStamp;
+begin
+AddLogNoTime(Format(GetStampText(fStrings.StartStamp),[GetTimeString(GetTime)]));
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TSimpleLog.AddEndStamp;
+begin
+AddLogNoTime(Format(GetStampText(fStrings.EndStamp),[GetTimeString(GetTime)]));
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TSimpleLog.AddAppendStamp;
+begin
+AddLogNoTime(Format(GetStampText(fStrings.AppendStamp),[GetTimeString(GetTime)]));
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TSimpleLog.AddHeader;
+var
+  TempStr:  String;
+begin
+If Length(fStrings.HeaderText) < fStrings.LineLength then
+  TempStr := StringOfChar(' ',(fStrings.LineLength - Length(fStrings.HeaderText)) div 2) + fStrings.HeaderText
+else
+  TempStr := fStrings.HeaderText;
+AddLogNoTime(StringOfChar(fStrings.BreakerCharThick,fStrings.LineLength) + sLineBreak +
+  TempStr + sLineBreak + StringOfChar(fStrings.BreakerCharThick,fStrings.LineLength));
 end;
 
 end.
