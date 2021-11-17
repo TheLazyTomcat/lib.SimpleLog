@@ -42,7 +42,7 @@ type
     ForceTime:          Boolean;
     ForceTimeAutoreset: Boolean;    
     ForcedTime:         TDateTime;
-    IndentNewLines:     Boolean;
+    IndentLines:        Boolean;
   end;
 
   TSLStrings = record
@@ -99,12 +99,12 @@ type
     Function GetTime: TDateTime; virtual;
     Function GetTimeString(Time: TDateTime): String; virtual;
     Function GetIndentedString(const Str: String; IndentCount: Integer): String; virtual;
-    Function GetStampText(const Str: String): String;
-    procedure WriteLogToOutputs(const Str: String; LineBreakInStreams: Boolean); virtual;
-    procedure ProcessConsoleLog(const Str: String); virtual;
-    procedure ProcessLocalLog(const Str: String; IndentCount: Integer = 0); virtual;
+    Function GetStampStr(const StampText: String; ThickBreak: Boolean): String;
+    procedure WriteLogToOutputs(const LogText: String; LineBreakInStreams: Boolean); virtual;
+    procedure ProcessConsoleLog(const LogText: String); virtual;
+    procedure ProcessLocalLog(const LogText: String; IndentCount: Integer = 0); virtual;
     // events
-    procedure DoOnLog(const Text: String); virtual;
+    procedure DoOnLog(const LogText: String); virtual;
   public
     constructor Create;
     destructor Destroy; override;
@@ -113,8 +113,7 @@ type
     Function ActivateOutput(Output: TSLLogOutput): Boolean; virtual;
     Function DeactivateOutput(Output: TSLLogOutput): Boolean; virtual;
     procedure SetupOutputToStream(Stream: TStream; Append: Boolean; Activate: Boolean = True); virtual;
-    procedure SetupOutputToFile(const FileName: String; Append: Boolean; Activate: Boolean = True); virtual;
-
+    procedure SetupOutputToFile(const FileName: String; Append: Boolean; Activate: Boolean = True); virtual; 
     // external logs list methods
     Function LowIndex: Integer; override;
     Function HighIndex: Integer; override;
@@ -133,10 +132,9 @@ type
     Function ExternalLogSetOwned(Index: Integer; Owned: Boolean): Boolean; virtual; 
     // public logging methods
     Function ForceTimeSet(Time: TDateTime; Autoreset: Boolean = False): Boolean; virtual;
-    procedure AddLogNoTime(const Text: String); virtual;
-    procedure AddLogTime(const Text: String; Time: TDateTime); virtual;
-    procedure AddLog(const Text: String); virtual;
-
+    procedure AddLogNoTime(const LogText: String); virtual;
+    procedure AddLogTime(const LogText: String; Time: TDateTime); virtual;
+    procedure AddLog(const LogText: String); virtual;
     procedure AddEmpty; virtual;
     procedure AddBreaker; virtual;
     procedure AddBreakerThin; virtual;
@@ -158,7 +156,7 @@ type
     property ForceTime: Boolean read fSettings.ForceTime write fSettings.ForceTime;
     property ForceTimeAutoreset: Boolean read fSettings.ForceTimeAutoreset write fSettings.ForceTimeAutoreset;    
     property ForcedTime: TDateTime read fSettings.ForcedTime write fSettings.ForcedTime;
-    property IndentNewLines: Boolean read fSettings.IndentNewLines write fSettings.IndentNewLines;
+    property IndentLines: Boolean read fSettings.IndentLines write fSettings.IndentLines;
     // strings properties
     property Strings: TSLStrings read fStrings;
     property BreakerThin: Char read fStrings.BreakerCharThin write fStrings.BreakerCharThin;
@@ -299,7 +297,7 @@ fSettings.TimeSeparator := SL_DEFSTR_TIMESEPARATOR;
 fSettings.ForceTime := False;
 fSettings.ForceTimeAutoreset := False;
 fSettings.ForcedTime := Now;
-fSettings.IndentNewLines := False;
+fSettings.IndentLines := False;
 // init strings
 fStrings.BreakerCharThin := SL_DEFSTR_BREAKERCHAR_THIN;
 fStrings.BreakerCharThick := SL_DEFSTR_BREAKERCHAR_THICK;
@@ -363,6 +361,9 @@ end;
 //------------------------------------------------------------------------------
 
 Function TSimpleLog.GetIndentedString(const Str: String; IndentCount: Integer): String;
+var
+  IndentStr:  String;
+  i:          TStrOffset;
 begin
 If IndentCount > 0 then
   Result := AnsiReplaceStr(Str,sLineBreak,sLineBreak + StringOfChar(' ',IndentCount))
@@ -378,71 +379,79 @@ else
       #13 not followed by #10 or #0
       #0 not followed by #10 or #13
   }
+If Length(Str) > 0 then
+  begin
+  end
+else Result := '';
 end;
 
 //------------------------------------------------------------------------------
 
-Function TSimpleLog.GetStampText(const Str: String): String;
+Function TSimpleLog.GetStampStr(const StampText: String; ThickBreak: Boolean): String;
 begin
-Result := StringOfChar(fStrings.BreakerCharThin,fStrings.LineLength) + sLineBreak +
-  Str + sLineBreak + StringOfChar(fStrings.BreakerCharThin,fStrings.LineLength);
+If ThickBreak then
+  Result := StringOfChar(fStrings.BreakerCharThick,fStrings.LineLength) + sLineBreak +
+    StampText + sLineBreak + StringOfChar(fStrings.BreakerCharThick,fStrings.LineLength)
+else
+  Result := StringOfChar(fStrings.BreakerCharThin,fStrings.LineLength) + sLineBreak +
+    StampText + sLineBreak + StringOfChar(fStrings.BreakerCharThin,fStrings.LineLength);
 end;
 
 //------------------------------------------------------------------------------
 
 {$IFDEF OverflowChecks}{$Q-}{$ENDIF}
-procedure TSimpleLog.WriteLogToOutputs(const Str: String; LineBreakInStreams: Boolean);
+procedure TSimpleLog.WriteLogToOutputs(const LogText: String; LineBreakInStreams: Boolean);
 var
-  i:        Integer;
-  StrTemp:  UTF8String;
+  i:          Integer;
+  StreamStr:  UTF8String;
 begin
 // write to outputs
 If loInternal in fSettings.LogOutputs then
-  fInternalLog.Add(Str);
+  fInternalLog.Add(LogText);
 If LineBreakInStreams then
-  StrTemp := StrToUTF8(Str + sLineBreak)
+  StreamStr := StrToUTF8(LogText + sLineBreak)
 else
-  StrTemp := StrToUTF8(Str);
+  StreamStr := StrToUTF8(LogText);
 If (loStream in fSettings.LogOutputs) and Assigned(fStreamLog) then
-  fStreamLog.WriteBuffer(PUTF8Char(StrTemp)^,Length(StrTemp) * SizeOf(UTF8Char));
+  fStreamLog.WriteBuffer(PUTF8Char(StreamStr)^,Length(StreamStr) * SizeOf(UTF8Char));
 If (loFile in fSettings.LogOutputs) and Assigned(fFileLogStream) then
-  fFileLogStream.WriteBuffer(PUTF8Char(StrTemp)^,Length(StrTemp) * SizeOf(UTF8Char));
+  fFileLogStream.WriteBuffer(PUTF8Char(StreamStr)^,Length(StreamStr) * SizeOf(UTF8Char));
 If loConsole in fSettings.LogOutputs then
-  WriteLn(StrToCsl(Str));
+  WriteLn(StrToCsl(LogText));
 If loExternals in fSettings.LogOutputs then
   For i := LowIndex to HighIndex do
     If fExternalLogs[i].Active then
-      fExternalLogs[i].LogObject.Add(Str);
+      fExternalLogs[i].LogObject.Add(LogText);
 Inc(fLogCounter); // this can overflow
-DoOnLog(Str);
+DoOnLog(LogText);
 end;
 {$IFDEF OverflowChecks}{$Q+}{$ENDIF}
 
 //------------------------------------------------------------------------------
 
-procedure TSimpleLog.ProcessConsoleLog(const Str: String);
+procedure TSimpleLog.ProcessConsoleLog(const LogText: String);
 begin
-WriteLogToOutputs(Str,False);
+WriteLogToOutputs(LogText,False);
 end;
 
 //------------------------------------------------------------------------------
 
-procedure TSimpleLog.ProcessLocalLog(const Str: String; IndentCount: Integer = 0);
+procedure TSimpleLog.ProcessLocalLog(const LogText: String; IndentCount: Integer = 0);
 begin
-If fSettings.IndentNewLines and (IndentCount > 0) then
-  WriteLogToOutputs(GetIndentedString(Str,IndentCount),True)
+If fSettings.IndentLines and (IndentCount > 0) then
+  WriteLogToOutputs(GetIndentedString(LogText,IndentCount),True)
 else
-  WriteLogToOutputs(Str,True);
+  WriteLogToOutputs(LogText,True);
 end;
 
 //------------------------------------------------------------------------------
 
-procedure TSimpleLog.DoOnLog(const Text: String);
+procedure TSimpleLog.DoOnLog(const LogText: String);
 begin
 If Assigned(fOnLogEvent) then
-  fOnLogEvent(Self,Text);
+  fOnLogEvent(Self,LogText);
 If Assigned(fOnLogCallback) then
-  fOnLogCallback(Self,Text);
+  fOnLogCallback(Self,LogText);
 end;
 
 //==============================================================================
@@ -716,26 +725,26 @@ end;
 
 //------------------------------------------------------------------------------
 
-procedure TSimpleLog.AddLogNoTime(const Text: String);
+procedure TSimpleLog.AddLogNoTime(const LogText: String);
 begin
-ProcessLocalLog(Text);
+ProcessLocalLog(LogText);
 end;
 
 //------------------------------------------------------------------------------
 
-procedure TSimpleLog.AddLogTime(const Text: String; Time: TDateTime);
+procedure TSimpleLog.AddLogTime(const LogText: String; Time: TDateTime);
 var
   TimeStr:  String;
 begin
 TimeStr := GetTimeString(Time) + fSettings.TimeSeparator;
-ProcessLocalLog(TimeStr + Text,Length(TimeStr));
+ProcessLocalLog(TimeStr + LogText,Length(TimeStr));
 end;
 
 //------------------------------------------------------------------------------
 
-procedure TSimpleLog.AddLog(const Text: String);
+procedure TSimpleLog.AddLog(const LogText: String);
 begin
-AddLogTime(Text,GetTime);
+AddLogTime(LogText,GetTime);
 end;
 
 //------------------------------------------------------------------------------
@@ -770,42 +779,38 @@ end;
 
 procedure TSimpleLog.AddTimeStamp;
 begin
-AddLogNoTime(Format(GetStampText(fStrings.TimeStamp),[GetTimeString(GetTime)]));
+AddLogNoTime(Format(GetStampStr(fStrings.TimeStamp,False),[GetTimeString(GetTime)]));
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TSimpleLog.AddStartStamp;
 begin
-AddLogNoTime(Format(GetStampText(fStrings.StartStamp),[GetTimeString(GetTime)]));
+AddLogNoTime(Format(GetStampStr(fStrings.StartStamp,False),[GetTimeString(GetTime)]));
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TSimpleLog.AddEndStamp;
 begin
-AddLogNoTime(Format(GetStampText(fStrings.EndStamp),[GetTimeString(GetTime)]));
+AddLogNoTime(Format(GetStampStr(fStrings.EndStamp,False),[GetTimeString(GetTime)]));
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TSimpleLog.AddAppendStamp;
 begin
-AddLogNoTime(Format(GetStampText(fStrings.AppendStamp),[GetTimeString(GetTime)]));
+AddLogNoTime(Format(GetStampStr(fStrings.AppendStamp,False),[GetTimeString(GetTime)]));
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TSimpleLog.AddHeader;
-var
-  TempStr:  String;
 begin
 If Length(fStrings.HeaderText) < fStrings.LineLength then
-  TempStr := StringOfChar(' ',(fStrings.LineLength - Length(fStrings.HeaderText)) div 2) + fStrings.HeaderText
+  AddLogNoTime(GetStampStr(StringOfChar(' ',(fStrings.LineLength - Length(fStrings.HeaderText)) div 2) + fStrings.HeaderText,True))
 else
-  TempStr := fStrings.HeaderText;
-AddLogNoTime(StringOfChar(fStrings.BreakerCharThick,fStrings.LineLength) + sLineBreak +
-  TempStr + sLineBreak + StringOfChar(fStrings.BreakerCharThick,fStrings.LineLength));
+  AddLogNoTime(GetStampStr(fStrings.HeaderText,True));
 end;
 
 end.
