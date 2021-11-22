@@ -23,11 +23,26 @@ uses
   SysUtils, Classes,
   AuxTypes, AuxClasses;
 
+{===============================================================================
+    Library-specific exceptions
+===============================================================================}
 type
   ESLException = class(Exception);
 
   ESLIndexOutOfBounds = class(ESLException);
   ESLInvalidValue     = class(ESLException);
+
+{===============================================================================
+    Auxiliary routines - declaration
+===============================================================================}
+
+procedure InitFormatSettings(out FormatSettings: TFormatSettings);
+
+{===============================================================================
+--------------------------------------------------------------------------------
+                                   TSimpleLog
+--------------------------------------------------------------------------------
+===============================================================================}
 
 type
   TSLLogOutput = (loInternal,loStream,loFile,loConsole,loExternals);
@@ -56,15 +71,16 @@ type
     HeaderText:       String;
   end;
 
-{
-  TSLExternalLogItem is for internal use only.
-}
+  // TSLExternalLogItem is for internal use only.
   TSLExternalLogItem = record
     LogObject:  TStrings;
     Active:     Boolean;
     Owned:      Boolean;
   end;
 
+{===============================================================================
+    TSimpleLog - class declaration
+===============================================================================}
 type
   TSimpleLog = class(TCustomListObject)
   protected
@@ -109,8 +125,27 @@ type
     constructor Create;
     destructor Destroy; override;
     // output setup methods
+  {
+    OutputIsActive returns true when selected output is active, false otherwise.
+
+    But note the fact that some output is active does not necessarily mean
+    writing to that output will be performed, there are checks done in each
+    write which might prevent it.
+  }
     Function OutputIsActive(Output: TSLLogOutput): Boolean; virtual;
+  {
+    OutputActivate activates selected output method and returns its previous
+    state.
+
+    Note that activation of some outputs might be prevented by performed checks
+    (eg. that some objects are assigned). In that case the state of output will
+    be untouched.
+  }
     Function OutputActivate(Output: TSLLogOutput): Boolean; virtual;
+  {
+    OutputTryActivate works the same as OutputActivate, but does NOT return
+    previous state. Instead, it returns new state of the output.
+  }
     Function OutputTryActivate(Output: TSLLogOutput): Boolean; virtual;
     Function OutputDeactivate(Output: TSLLogOutput): Boolean; virtual;
     procedure SetupOutputToStream(Stream: TStream; Append: Boolean; Activate: Boolean = True); virtual;
@@ -128,9 +163,15 @@ type
     procedure ExternalLogDelete(Index: Integer); virtual;
     procedure ExternalLogClear; virtual;
     Function ExternalLogIsActive(Index: Integer): Boolean; virtual;
+  {
+    ExternalLogSetActive returns previous state.
+  }
     Function ExternalLogSetActive(Index: Integer; Active: Boolean): Boolean; virtual;
     Function ExternalLogIsOwned(Index: Integer): Boolean; virtual;
-    Function ExternalLogSetOwned(Index: Integer; Owned: Boolean): Boolean; virtual; 
+  {
+    ExternalLogSetOwned returns previous state.
+  }
+    Function ExternalLogSetOwned(Index: Integer; Owned: Boolean): Boolean; virtual;
     // public logging methods
     Function ForceTimeSet(Time: TDateTime; Autoreset: Boolean = False): Boolean; virtual;
     procedure AddLogNoTime(const LogText: String); virtual;
@@ -150,7 +191,7 @@ type
     // settings properties
     property Settings: TSLSettings read fSettings;
     // to (de)activate individual log outputs, use methods ActivateOutput and DeactivateOutput
-    property LogOutputs: TSLLogOutputs read fSettings.LogOutputs;
+    property LogOutputs: TSLLogOutputs read fSettings.LogOutputs write fSettings.LogOutputs;
     property FormatSettings: TFormatSettings read fSettings.FormatSettings write fSettings.FormatSettings;
     property TimeFormat: String read fSettings.TimeFormat write fSettings.TimeFormat;
     property TimeSeparator: String read fSettings.TimeSeparator write fSettings.TimeSeparator;
@@ -186,13 +227,15 @@ type
     property OnLog: TStringEvent read fOnLogEvent write fOnLogEvent;
   end;
 
-procedure InitFormatSettings(out FormatSettings: TFormatSettings);
-
 implementation
 
 uses
   {$IFDEF Windows}Windows,{$ENDIF}
   StrRect;
+
+{===============================================================================
+    Auxiliary routines - implementation
+===============================================================================}
 
 procedure InitFormatSettings(out FormatSettings: TFormatSettings);
 begin
@@ -213,7 +256,14 @@ FormatSettings := DefaultFormatSettings;
 {$WARN SYMBOL_PLATFORM ON}
 end;
 
-//==============================================================================
+{===============================================================================
+--------------------------------------------------------------------------------
+                                   TSimpleLog                                    
+--------------------------------------------------------------------------------
+===============================================================================}
+{===============================================================================
+    TSimpleLog - implementation constants
+===============================================================================}
 
 const
   SL_DEFSTR_TIMEFORMAT    = 'yyyy-mm-dd hh:nn:ss.zzz';
@@ -232,7 +282,12 @@ const
   // those plus must be there...
   SL_DEFSTR_HEADERTEXT: WideString = 'SimpleLog 2.0, ' + #$00A9 + '2015-2021 Franti' + #$0161 + 'ek Milt';
 
-//------------------------------------------------------------------------------
+{===============================================================================
+    TSimpleLog - class implementation
+===============================================================================}
+{-------------------------------------------------------------------------------
+    TSimpleLog - protected methods
+-------------------------------------------------------------------------------}
 
 Function TSimpleLog.GetExternalLog(Index: Integer): TStrings;
 begin
@@ -473,7 +528,7 @@ If (loStream in fSettings.LogOutputs) and Assigned(fStreamLog) then
   fStreamLog.WriteBuffer(PUTF8Char(StreamStr)^,Length(StreamStr) * SizeOf(UTF8Char));
 If (loFile in fSettings.LogOutputs) and Assigned(fFileLogStream) then
   fFileLogStream.WriteBuffer(PUTF8Char(StreamStr)^,Length(StreamStr) * SizeOf(UTF8Char));
-If loConsole in fSettings.LogOutputs then
+If (loConsole in fSettings.LogOutputs) and fConsolePresent and not fConsoleBinded then
   WriteLn(StrToCsl(LogText));
 If loExternals in fSettings.LogOutputs then
   For i := LowIndex to HighIndex do
@@ -511,7 +566,9 @@ If Assigned(fOnLogCallback) then
   fOnLogCallback(Self,LogText);
 end;
 
-//==============================================================================
+{-------------------------------------------------------------------------------
+    TSimpleLog - public methods
+-------------------------------------------------------------------------------}
 
 constructor TSimpleLog.Create;
 begin
