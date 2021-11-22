@@ -48,12 +48,12 @@ type
   TSLStrings = record
     BreakerCharThin:  Char;
     BreakerCharThick: Char;
+    BreakerLength:    Integer;
     TimeStamp:        String;
     StartStamp:       String;
     EndStamp:         String;
     AppendStamp:      String;
     HeaderText:       String;
-    LineLength:       Integer;
   end;
 
 {
@@ -111,6 +111,7 @@ type
     // output setup methods
     Function OutputIsActive(Output: TSLLogOutput): Boolean; virtual;
     Function OutputActivate(Output: TSLLogOutput): Boolean; virtual;
+    Function OutputTryActivate(Output: TSLLogOutput): Boolean; virtual;
     Function OutputDeactivate(Output: TSLLogOutput): Boolean; virtual;
     procedure SetupOutputToStream(Stream: TStream; Append: Boolean; Activate: Boolean = True); virtual;
     procedure SetupOutputToFile(const FileName: String; Append: Boolean; Activate: Boolean = True); virtual; 
@@ -161,12 +162,12 @@ type
     property Strings: TSLStrings read fStrings;
     property BreakerThin: Char read fStrings.BreakerCharThin write fStrings.BreakerCharThin;
     property BreakerThick: Char read fStrings.BreakerCharThick write fStrings.BreakerCharThick;
+    property BreakerLength: Integer read fStrings.BreakerLength write fStrings.BreakerLength;
     property TimeStamp: String read fStrings.TimeStamp write fStrings.TimeStamp;
     property StartStamp: String read fStrings.StartStamp write fStrings.StartStamp;
     property EndStamp: String read fStrings.EndStamp write fStrings.EndStamp;
     property AppendStamp: String read fStrings.AppendStamp write fStrings.AppendStamp;
     property HeaderText: String read fStrings.HeaderText write fStrings.HeaderText;
-    property LineLength: Integer read fStrings.LineLength write fStrings.LineLength;
     // informative properties
     property TimeOfCreation: TDateTime read fTimeOfCreation;
     property LogCounter: UInt32 read fLogCounter;
@@ -228,7 +229,8 @@ const
   SL_DEFSTR_ENDSTAMP    = '%s - Ending log';
   SL_DEFSTR_APPENDSTAMP = '%s - Appending log';
 
-  SL_DEFSTR_HEADERTEXT = UTF8String('SimpleLog 2.0, '#$C2#$A9'2015-2021 Franti'#$C5#$A1'ek Milt');
+  // those plus must be there...
+  SL_DEFSTR_HEADERTEXT: WideString = 'SimpleLog 2.0, ' + #$00A9 + '2015-2021 Franti' + #$0161 + 'ek Milt';
 
 //------------------------------------------------------------------------------
 
@@ -301,12 +303,12 @@ fSettings.IndentLines := False;
 // init strings
 fStrings.BreakerCharThin := SL_DEFSTR_BREAKERCHAR_THIN;
 fStrings.BreakerCharThick := SL_DEFSTR_BREAKERCHAR_THICK;
+fStrings.BreakerLength := SL_DEFSTR_BREAKER_LENGTH;
 fStrings.TimeStamp := SL_DEFSTR_TIMESTAMP;
 fStrings.StartStamp := SL_DEFSTR_STARTSTAMP;
 fStrings.EndStamp := SL_DEFSTR_ENDSTAMP;
 fStrings.AppendStamp := SL_DEFSTR_APPENDSTAMP;
-fStrings.HeaderText := UTF8ToStr(SL_DEFSTR_HEADERTEXT);
-fStrings.LineLength := SL_DEFSTR_BREAKER_LENGTH;
+fStrings.HeaderText := WideToStr(SL_DEFSTR_HEADERTEXT);
 // init other stuff
 fTimeOfCreation := Now;
 fLogCounter := 0;
@@ -371,7 +373,6 @@ Function TSimpleLog.GetIndentedString(const Str: String; IndentCount: Integer): 
   end;
 
 var
-  IndentStr:      String;
   StrPos,ResPos:  TStrOffset;
   ResLen:         TStrSize;
 begin
@@ -386,7 +387,6 @@ begin
 }
 If Length(Str) > 0 then
   begin
-    IndentStr := StringOfChar(' ',IndentCount);
     // count how long the resulting string will be for preallocation
     ResLen := 0;
     StrPos := 1;
@@ -447,11 +447,11 @@ end;
 Function TSimpleLog.GetStampStr(const StampText: String; ThickBreak: Boolean): String;
 begin
 If ThickBreak then
-  Result := StringOfChar(fStrings.BreakerCharThick,fStrings.LineLength) + sLineBreak +
-    StampText + sLineBreak + StringOfChar(fStrings.BreakerCharThick,fStrings.LineLength)
+  Result := StringOfChar(fStrings.BreakerCharThick,fStrings.BreakerLength) + sLineBreak +
+    StampText + sLineBreak + StringOfChar(fStrings.BreakerCharThick,fStrings.BreakerLength)
 else
-  Result := StringOfChar(fStrings.BreakerCharThin,fStrings.LineLength) + sLineBreak +
-    StampText + sLineBreak + StringOfChar(fStrings.BreakerCharThin,fStrings.LineLength);
+  Result := StringOfChar(fStrings.BreakerCharThin,fStrings.BreakerLength) + sLineBreak +
+    StampText + sLineBreak + StringOfChar(fStrings.BreakerCharThin,fStrings.BreakerLength);
 end;
 
 //------------------------------------------------------------------------------
@@ -545,6 +545,15 @@ Result := Output in fSettings.LogOutputs;
 }
 If (Output <> loConsole) or (fConsolePresent and not fConsoleBinded) then
   Include(fSettings.LogOutputs,Output);
+end;
+
+//------------------------------------------------------------------------------
+
+Function TSimpleLog.OutputTryActivate(Output: TSLLogOutput): Boolean;
+begin
+If (Output <> loConsole) or (fConsolePresent and not fConsoleBinded) then
+  Include(fSettings.LogOutputs,Output);
+Result := Output in fSettings.LogOutputs;
 end;
 
 //------------------------------------------------------------------------------
@@ -815,21 +824,21 @@ end;
 
 procedure TSimpleLog.AddBreaker;
 begin
-AddLogNoTime(StringOfChar(fStrings.BreakerCharThin,fStrings.LineLength));
+AddLogNoTime(StringOfChar(fStrings.BreakerCharThin,fStrings.BreakerLength));
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TSimpleLog.AddBreakerThin;
 begin
-AddLogNoTime(StringOfChar(fStrings.BreakerCharThin,fStrings.LineLength));
+AddLogNoTime(StringOfChar(fStrings.BreakerCharThin,fStrings.BreakerLength));
 end;
 
 //------------------------------------------------------------------------------
 
 procedure TSimpleLog.AddBreakerThick;
 begin
-AddLogNoTime(StringOfChar(fStrings.BreakerCharThick,fStrings.LineLength));
+AddLogNoTime(StringOfChar(fStrings.BreakerCharThick,fStrings.BreakerLength));
 end;
 
 //------------------------------------------------------------------------------
@@ -864,8 +873,8 @@ end;
 
 procedure TSimpleLog.AddHeader;
 begin
-If Length(fStrings.HeaderText) < fStrings.LineLength then
-  AddLogNoTime(GetStampStr(StringOfChar(' ',(fStrings.LineLength - Length(fStrings.HeaderText)) div 2) + fStrings.HeaderText,True))
+If Length(fStrings.HeaderText) < fStrings.BreakerLength then
+  AddLogNoTime(GetStampStr(StringOfChar(' ',(fStrings.BreakerLength - Length(fStrings.HeaderText)) div 2) + fStrings.HeaderText,True))
 else
   AddLogNoTime(GetStampStr(fStrings.HeaderText,True));
 end;
