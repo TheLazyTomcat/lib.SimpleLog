@@ -190,7 +190,7 @@ procedure InitFormatSettings(out FormatSettings: TFormatSettings);
 implementation
 
 uses
-  {$IFDEF Windows}Windows,{$ENDIF} StrUtils,
+  {$IFDEF Windows}Windows,{$ENDIF}
   StrRect;
 
 procedure InitFormatSettings(out FormatSettings: TFormatSettings);
@@ -361,26 +361,83 @@ end;
 //------------------------------------------------------------------------------
 
 Function TSimpleLog.GetIndentedString(const Str: String; IndentCount: Integer): String;
-var
-  IndentStr:  String;
-  i:          TStrOffset;
-begin
-If IndentCount > 0 then
-  Result := AnsiReplaceStr(Str,sLineBreak,sLineBreak + StringOfChar(' ',IndentCount))
-else
-  Result := Str;
-{$message 'rework'}
-  {
-    folloving are all recognized linebreak sequences:
 
-      #10#13
-      #13#10
-      #10 not followed by #13 or #0
-      #13 not followed by #10 or #0
-      #0 not followed by #10 or #13
-  }
+  procedure PutIndentation(AtPos: TStrOffset);
+  var
+    ii: TStrOffset;
+  begin
+    For ii := AtPos to Pred(AtPos + IndentCount) do
+      Result[ii] := ' ';
+  end;
+
+var
+  IndentStr:      String;
+  StrPos,ResPos:  TStrOffset;
+  ResLen:         TStrSize;
+begin
+{
+  folloving are all recognized linebreak sequences:
+
+    #0
+    #10#13
+    #13#10
+    #10 not followed by #13
+    #13 not followed by #10
+}
 If Length(Str) > 0 then
   begin
+    IndentStr := StringOfChar(' ',IndentCount);
+    // count how long the resulting string will be for preallocation
+    ResLen := 0;
+    StrPos := 1;
+    while StrPos <= Length(Str) do
+      begin
+        If Ord(Str[StrPos]) in [10,13] then
+          begin
+            If StrPos < Length(Str) then
+              If (Ord(Str[StrPos + 1]) in [10,13]) and (Str[StrPos + 1] <> Str[StrPos]) then
+                begin
+                  Inc(ResLen);
+                  Inc(StrPos);
+                end;
+            Inc(ResLen,IndentCount + 1);
+          end
+        else If Ord(Str[StrPos]) = 0 then
+          Inc(ResLen,IndentCount + 1)
+        else
+          Inc(ResLen);
+        Inc(StrPos);
+      end;
+    SetLength(Result,ResLen); // preallocation
+    // construct the result
+    StrPos := 1;
+    ResPos := 1;
+    while (StrPos <= Length(Str)) and (ResPos <= Length(Result)) do
+      begin
+        If Ord(Str[StrPos]) in [10,13] then
+          begin
+            Result[ResPos] := Str[StrPos];
+            If StrPos < Length(Str) then
+              If (Ord(Str[StrPos + 1]) in [10,13]) and (Str[StrPos + 1] <> Str[StrPos]) then
+                begin
+                  Inc(StrPos);
+                  Inc(ResPos);
+                  Result[ResPos] := Str[StrPos];
+                end;
+            PutIndentation(ResPos + 1);
+            Inc(ResPos,IndentCount);
+          end
+        else If Ord(Str[StrPos]) = 0 then
+          begin
+            Result[ResPos] := Str[StrPos];
+            PutIndentation(ResPos + 1);
+            Inc(ResPos,IndentCount);
+          end
+        else
+          Result[ResPos] := Str[StrPos];
+        Inc(StrPos);
+        Inc(ResPos);        
+      end;
   end
 else Result := '';
 end;
