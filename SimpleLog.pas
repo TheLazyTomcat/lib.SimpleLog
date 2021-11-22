@@ -109,9 +109,9 @@ type
     constructor Create;
     destructor Destroy; override;
     // output setup methods
-    Function ActiveOutput(Output: TSLLogOutput): Boolean; virtual;
-    Function ActivateOutput(Output: TSLLogOutput): Boolean; virtual;
-    Function DeactivateOutput(Output: TSLLogOutput): Boolean; virtual;
+    Function OutputIsActive(Output: TSLLogOutput): Boolean; virtual;
+    Function OutputActivate(Output: TSLLogOutput): Boolean; virtual;
+    Function OutputDeactivate(Output: TSLLogOutput): Boolean; virtual;
     procedure SetupOutputToStream(Stream: TStream; Append: Boolean; Activate: Boolean = True); virtual;
     procedure SetupOutputToFile(const FileName: String; Append: Boolean; Activate: Boolean = True); virtual; 
     // external logs list methods
@@ -126,9 +126,9 @@ type
     Function ExternalLogRemove(LogObject: TStrings): Integer; virtual;
     procedure ExternalLogDelete(Index: Integer); virtual;
     procedure ExternalLogClear; virtual;
-    Function ExternalLogActive(Index: Integer): Boolean; virtual;
+    Function ExternalLogIsActive(Index: Integer): Boolean; virtual;
     Function ExternalLogSetActive(Index: Integer; Active: Boolean): Boolean; virtual;
-    Function ExternalLogOwned(Index: Integer): Boolean; virtual;
+    Function ExternalLogIsOwned(Index: Integer): Boolean; virtual;
     Function ExternalLogSetOwned(Index: Integer; Owned: Boolean): Boolean; virtual; 
     // public logging methods
     Function ForceTimeSet(Time: TDateTime; Autoreset: Boolean = False): Boolean; virtual;
@@ -221,7 +221,7 @@ const
   SL_DEFSTR_BREAKERCHAR_THIN  = '-';
   SL_DEFSTR_BREAKERCHAR_THICK = '=';
 
-  SL_DEFSTR_LINELENGTH = 80;
+  SL_DEFSTR_BREAKER_LENGTH = 80;
 
   SL_DEFSTR_TIMESTAMP   = '%s';
   SL_DEFSTR_STARTSTAMP  = '%s - Starting log';
@@ -306,7 +306,7 @@ fStrings.StartStamp := SL_DEFSTR_STARTSTAMP;
 fStrings.EndStamp := SL_DEFSTR_ENDSTAMP;
 fStrings.AppendStamp := SL_DEFSTR_APPENDSTAMP;
 fStrings.HeaderText := UTF8ToStr(SL_DEFSTR_HEADERTEXT);
-fStrings.LineLength := 80;
+fStrings.LineLength := SL_DEFSTR_BREAKER_LENGTH;
 // init other stuff
 fTimeOfCreation := Now;
 fLogCounter := 0;
@@ -529,14 +529,14 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TSimpleLog.ActiveOutput(Output: TSLLogOutput): Boolean;
+Function TSimpleLog.OutputIsActive(Output: TSLLogOutput): Boolean;
 begin
 Result := Output in fSettings.LogOutputs;
 end;
 
 //------------------------------------------------------------------------------
 
-Function TSimpleLog.ActivateOutput(Output: TSLLogOutput): Boolean;
+Function TSimpleLog.OutputActivate(Output: TSLLogOutput): Boolean;
 begin
 Result := Output in fSettings.LogOutputs;
 {
@@ -549,7 +549,7 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TSimpleLog.DeactivateOutput(Output: TSLLogOutput): Boolean;
+Function TSimpleLog.OutputDeactivate(Output: TSLLogOutput): Boolean;
 begin
 Result := Output in fSettings.LogOutputs;
 Exclude(fSettings.LogOutputs,Output);
@@ -570,7 +570,7 @@ fStreamLog := Stream;
 If Append then
   fStreamLog.Seek(0,soEnd);
 If Activate then
-  ActivateOutput(loStream);
+  OutputActivate(loStream);
 end;
 
 //------------------------------------------------------------------------------
@@ -588,7 +588,7 @@ else
 If Append then
   fFileLogStream.Seek(0,soEnd);
 If Activate then
-  ActivateOutput(loFile);
+  OutputActivate(loFile);
 end;
 
 //------------------------------------------------------------------------------
@@ -728,7 +728,7 @@ end;
 
 //------------------------------------------------------------------------------
 
-Function TSimpleLog.ExternalLogActive(Index: Integer): Boolean;
+Function TSimpleLog.ExternalLogIsActive(Index: Integer): Boolean;
 begin
 If CheckIndex(Index) then
   Result := fExternalLogs[Index].Active
@@ -750,7 +750,7 @@ end;
  
 //------------------------------------------------------------------------------
 
-Function TSimpleLog.ExternalLogOwned(Index: Integer): Boolean;
+Function TSimpleLog.ExternalLogIsOwned(Index: Integer): Boolean;
 begin
 If CheckIndex(Index) then
   Result := fExternalLogs[Index].Owned
