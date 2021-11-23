@@ -40,17 +40,29 @@ procedure InitFormatSettings(out FormatSettings: TFormatSettings);
 
 {===============================================================================
 --------------------------------------------------------------------------------
+                                Console binding
+--------------------------------------------------------------------------------
+===============================================================================}
+{===============================================================================
+    Console binding - declaration
+===============================================================================}
+
+Function ConsoleIsBinded: Boolean;
+Function ConsoleBind(const LogFileName: String): Boolean;
+procedure ConsoleUnbind;
+
+{===============================================================================
+--------------------------------------------------------------------------------
                                    TSimpleLog
 --------------------------------------------------------------------------------
 ===============================================================================}
-
 type
   TSLLogOutput = (loInternal,loStream,loFile,loConsole,loExternals);
 
   TSLLogOutputs = set of TSLLogOutput;
 
   TSLSettings = record
-    LogOutputs:         TSLLogOutputs;
+    Outputs:            TSLLogOutputs;
     FormatSettings:     TFormatSettings;
     TimeFormat:         String;
     TimeSeparator:      String;
@@ -99,6 +111,9 @@ type
     fExternalLogCount:    Integer;
     // console binding fields
     fConsoleBinded:       Boolean;
+    fOriginalErrOutput:   TTextRec;
+    fOriginalOutput:      TTextRec;
+    fOriginalInput:       TTextRec;
     // event/callback properties
     fOnLogEvent:          TStringEvent;
     fOnLogCallback:       TStringCallback;
@@ -136,20 +151,11 @@ type
   {
     OutputActivate activates selected output method and returns its previous
     state.
-
-    Note that activation of some outputs might be prevented by performed checks
-    (eg. that some objects are assigned). In that case the state of output will
-    be untouched.
   }
     Function OutputActivate(Output: TSLLogOutput): Boolean; virtual;
-  {
-    OutputTryActivate works the same as OutputActivate, but does NOT return
-    previous state. Instead, it returns new state of the output.
-  }
-    Function OutputTryActivate(Output: TSLLogOutput): Boolean; virtual;
     Function OutputDeactivate(Output: TSLLogOutput): Boolean; virtual;
     procedure SetupOutputToStream(Stream: TStream; Append: Boolean; Activate: Boolean = True); virtual;
-    procedure SetupOutputToFile(const FileName: String; Append: Boolean; Activate: Boolean = True); virtual; 
+    procedure SetupOutputToFile(const FileName: String; Append: Boolean; Activate: Boolean = True); virtual;
     // external logs list methods
     Function LowIndex: Integer; override;
     Function HighIndex: Integer; override;
@@ -187,11 +193,12 @@ type
     procedure AddAppendStamp; virtual;
     procedure AddHeader; virtual;
     // console binding
-
+    Function BindConsole: Boolean; virtual;
+    procedure UnbindConsole; virtual;
     // settings properties
     property Settings: TSLSettings read fSettings;
     // to (de)activate individual log outputs, use methods ActivateOutput and DeactivateOutput
-    property LogOutputs: TSLLogOutputs read fSettings.LogOutputs write fSettings.LogOutputs;
+    property Outputs: TSLLogOutputs read fSettings.Outputs write fSettings.Outputs;
     property FormatSettings: TFormatSettings read fSettings.FormatSettings write fSettings.FormatSettings;
     property TimeFormat: String read fSettings.TimeFormat write fSettings.TimeFormat;
     property TimeSeparator: String read fSettings.TimeSeparator write fSettings.TimeSeparator;
@@ -221,6 +228,8 @@ type
     property ExternalLogCount: Integer read GetCount;
     property Capacity: Integer read GetCapacity;  // redeclaration to make the property read-only
     property Count: Integer read GetCount;        // -//-
+    // console binding
+    property ConsoleBinded: Boolean read fConsoleBinded;
     // events/callbacks properties
     property OnLogEvent: TStringEvent read fOnLogEvent write fOnLogEvent;
     property OnLogCallback: TStringCallback read fOnLogCallback write fOnLogCallback;
@@ -258,13 +267,276 @@ end;
 
 {===============================================================================
 --------------------------------------------------------------------------------
+                                Console binding
+--------------------------------------------------------------------------------
+===============================================================================}
+{===============================================================================
+    Console binding - implementation
+===============================================================================}
+{-------------------------------------------------------------------------------
+    Console binding - internal routines
+-------------------------------------------------------------------------------}
+type
+  TSLCB_IOFunc = Function(var F: TTextRec): Integer;
+
+const
+  SLCB_ERROR_SUCCESS                 = 0;
+  SLCB_ERROR_UNSUPPORTED_MODE        = 10;
+  SLCB_ERROR_WRITE_FAILED            = 11;
+  SLCB_ERROR_READ_FAILED             = 12;
+  SLCB_ERROR_FLUSH_FUNC_NOT_ASSIGNED = 13;
+
+  SLCB_USERDATAINDEX_OBJECT = Low(TTextRec(nil^).UserData);
+
+  SLCB_STATUS_LOCKED   = 1;
+  SLCB_STATUS_UNLOCKED = 0;
+
+var
+  SLCB_StatusWord: Integer = SLCB_STATUS_UNLOCKED;
+
+threadvar
+  SLCB_BindedLogObject: TSimpleLog;
+
+//==============================================================================
+
+Function SLCB_WriteConsole(Handle: THandle; Ptr: Pointer; CharsToWrite: TStrSize; out CharsWritten: TStrSize): Boolean;
+var
+  WrittenChars: DWORD;
+begin
+Result := Windows.WriteConsole(Handle,Ptr,DWORD(CharsToWrite),WrittenChars,nil);
+CharsWritten := TStrSize(WrittenChars);
+end;
+
+//------------------------------------------------------------------------------
+
+Function SLCB_ReadConsole(Handle: THandle; Ptr: Pointer; CharsToRead: TStrSize; out CharsRead: TStrSize): Boolean;
+var
+  ReadChars:  DWORD;
+begin
+Result := Windows.ReadConsole(Handle,Ptr,DWORD(CharsToRead),ReadChars,nil);
+CharsRead := TStrSize(ReadChars);
+end;
+
+//==============================================================================
+
+Function SLCB_Output(var F: TTextRec): Integer;
+{
+  Take whatever is in the text buffer and pass it to both system call (which
+  will do the output into console) and simple log object stored in user data.
+
+  Note that the text buffer always consists of single-byte characters, even
+  when compiled with unicode.
+}
+var
+  CharsWritten: TStrSize;
+  ConsoleText:  AnsiString;
+{$IF Defined(Unicode) and Defined(Windows)} // afaik the console cannot be wide-char in linux (?? :/)
+  WideText:     WideString;
+{$IFEND}
+begin
+SetLength(ConsoleText,F.BufPos);
+Move(F.Buffer,PAnsiChar(ConsoleText)^,F.BufPos);
+{$IF Defined(Unicode) and Defined(Windows)}
+{
+  Text in text buffer is single byte, but we must pass pointer to unicode text.
+  So copy data from text buffer into ansi string, convert it to wide string
+  and then pass reference to this wide string.
+}
+WideText := StrToWide(AnsiToStr(StrBuffer));
+If SLCB_WriteConsole(F.Handle,PWideChar(WideText),Length(WideText),CharsWritten) then
+  begin
+    If CharsWritten = TStrSize(Length(WideText)) then
+      begin
+        //It seems that in unicode, the text buffer has ansi encoding, not oem.
+        TSimpleLog(Addr(F.UserData[SLCB_USERDATAINDEX_OBJECT])^).
+          ProcessConsoleLog(AnsiToStr(ConsoleText));
+{$ELSE}
+If SLCB_WriteConsole(F.Handle,F.BufPtr,F.BufPos,CharsWritten) then
+  begin
+    If CharsWritten = TStrSize(F.BufPos) then
+      begin
+        TSimpleLog(Addr(F.UserData[SLCB_USERDATAINDEX_OBJECT])^).
+          ProcessConsoleLog(CslToStr(ConsoleText));
+{$IFEND}
+        Result := SLCB_ERROR_SUCCESS;
+      end
+    else Result := SLCB_ERROR_WRITE_FAILED;
+  end
+else Result := SLCB_ERROR_WRITE_FAILED;
+F.BufPos := 0;
+end;
+
+//------------------------------------------------------------------------------
+
+Function SLCB_Input(var F: TTextRec): Integer;
+var
+  CharsRead:    TStrSize;
+  ConsoleText:  AnsiString;
+{$IF Defined(Unicode) and Defined(Windows)}
+  WideText:     WideString;
+begin
+{
+  ReadConsole loads wide string, but since the text buffer accepts only
+  single-byte strings, it must be converted.
+
+  Note that only BufSize/2 characters is read - this is to be sure that the
+  converted string will fit into the text buffer.
+}
+SetLength(WideText,F.BufSize div 2);
+If SLCB_ReadConsole(F.Handle,PWideChar(WideText),Length(WideText),CharsRead) then
+  begin
+    SetLength(WideText,CharsRead);
+    ConsoleText := StrToAnsi(WideToStr(Text));
+    If Length(ConsoleText) <= F.BufSize then
+      begin
+        Move(PAnsiChar(ConsoleText)^,F.Buffer,Length(ConsoleText));
+        TSimpleLog(Addr(F.UserData[SLCB_USERDATAINDEX_OBJECT])^).ProcessConsoleLog(WideToStr(WideText));
+        F.BufEnd := Length(ConsoleText);
+        Result := SLCB_ERROR_SUCCESS;
+      end
+    else Result := SLCB_ERROR_READ_FAILED;
+  end
+{$ELSE}
+begin
+If SLCB_ReadConsole(F.Handle,F.BufPtr,F.BufSize,CharsRead) then
+  begin
+    SetLength(ConsoleText,CharsRead);
+    Move(F.Buffer,PAnsiChar(ConsoleText)^,CharsRead);
+    TSimpleLog(Addr(F.UserData[SLCB_USERDATAINDEX_OBJECT])^).ProcessConsoleLog(CslToStr(ConsoleText));
+    F.BufEnd := CharsRead;
+    Result := SLCB_ERROR_SUCCESS;
+  end
+{$IFEND}
+else Result := SLCB_ERROR_READ_FAILED;
+F.BufPos := 0;
+end;
+
+//------------------------------------------------------------------------------
+
+Function SLCB_Flush(var F: TTextRec): Integer;
+begin
+case F.Mode of
+  fmOutput: begin
+              If Assigned(F.InOutFunc) then
+                TSLCB_IOFunc(F.InOutFunc)(F);
+              Result := SLCB_ERROR_SUCCESS;
+            end;
+  fmInput:  begin
+              F.BufPos := 0;
+              F.BufEnd := 0;
+              Result := SLCB_ERROR_SUCCESS;
+            end;
+else
+  Result := SLCB_ERROR_UNSUPPORTED_MODE;
+end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function SLCB_Open(var F: TTextRec): Integer;
+begin
+case F.Mode of
+  fmOutput: begin
+              F.Handle := GetStdHandle(STD_OUTPUT_HANDLE);
+              F.InOutFunc := @SLCB_Output;
+              Result := SLCB_ERROR_SUCCESS;
+            end;
+  fmInput:  begin
+              F.Handle := GetStdHandle(STD_INPUT_HANDLE);
+              F.InOutFunc := @SLCB_Input;
+              Result := SLCB_ERROR_SUCCESS;
+            end;
+else
+  Result := SLCB_ERROR_UNSUPPORTED_MODE;
+end;
+end;
+
+//------------------------------------------------------------------------------
+
+Function SLCB_Close(var F: TTextRec): Integer;
+begin
+If Assigned(F.FlushFunc) then
+  Result := TSLCB_IOFunc(F.FlushFunc)(F)
+else
+  Result := SLCB_ERROR_FLUSH_FUNC_NOT_ASSIGNED;
+F.Mode := fmClosed;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure SLCB_BindLogObject(var T: Text; LogObject: TSimpleLog);
+begin
+with TTextRec(T) do
+  begin
+    Mode := fmClosed;
+  {$IFDEF FPC}
+    LineEnd := sLineBreak;
+  {$ELSE}
+    Flags := tfCRLF;
+  {$ENDIF}
+    BufSize := SizeOf(Buffer);
+    BufPos := 0;
+    BufEnd := 0;
+    BufPtr := @Buffer;
+    OpenFunc := @SLCB_Open;
+    FlushFunc := @SLCB_Flush;
+    CloseFunc := @SLCB_Close;
+    TSimpleLog(Addr(UserData[SLCB_USERDATAINDEX_OBJECT])^) := LogObject;
+    Name := '';
+  end;
+end;
+
+{-------------------------------------------------------------------------------
+    Console binding - public routines
+-------------------------------------------------------------------------------}
+
+Function ConsoleIsBinded: Boolean;
+begin
+If Assigned(SLCB_BindedLogObject) then
+  Result := SLCB_BindedLogObject.ConsoleBinded
+else
+  Result := False;
+end;
+
+//------------------------------------------------------------------------------
+
+Function ConsoleBind(const LogFileName: String): Boolean;
+begin
+Result := False;
+SLCB_BindedLogObject := TSimpleLog.Create;
+try
+  SLCB_BindedLogObject.Outputs := [];
+  SLCB_BindedLogObject.SetupOutputToFile(LogFileName,False,True);
+  If SLCB_BindedLogObject.OutputIsActive(loFile) then
+    begin
+      If SLCB_BindedLogObject.BindConsole then
+        Result := True
+      else
+        FreeAndNil(SLCB_BindedLogObject);
+    end
+  else FreeAndNil(SLCB_BindedLogObject);
+except
+  FreeAndNil(SLCB_BindedLogObject);
+  raise;
+end;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure ConsoleUnbind;
+begin
+If Assigned(SLCB_BindedLogObject) then
+  FreeAndNil(SLCB_BindedLogObject); // this will automatically unbind
+end;
+
+{===============================================================================
+--------------------------------------------------------------------------------
                                    TSimpleLog                                    
 --------------------------------------------------------------------------------
 ===============================================================================}
 {===============================================================================
     TSimpleLog - implementation constants
 ===============================================================================}
-
 const
   SL_DEFSTR_TIMEFORMAT    = 'yyyy-mm-dd hh:nn:ss.zzz';
   SL_DEFSTR_TIMESEPARATOR = ' //: ';
@@ -347,7 +619,7 @@ end;
 procedure TSimpleLog.Initialize;
 begin
 // init settings
-fSettings.LogOutputs := [loInternal];
+fSettings.Outputs := [loInternal];
 InitFormatSettings(fSettings.FormatSettings);
 fSettings.TimeFormat := SL_DEFSTR_TIMEFORMAT;
 fSettings.TimeSeparator := SL_DEFSTR_TIMESEPARATOR;
@@ -385,7 +657,8 @@ procedure TSimpleLog.Finalize;
 begin
 fOnLogEvent := nil;
 fOnLogCallback := nil;
-//If fConsoleBinded then ...unbind console
+If fConsoleBinded then
+  UnbindConsole;
 ExternalLogClear;
 // destroy internally created objects
 If Assigned(fFileLogStream) then
@@ -518,19 +791,19 @@ var
   StreamStr:  UTF8String;
 begin
 // write to outputs
-If loInternal in fSettings.LogOutputs then
+If loInternal in fSettings.Outputs then
   fInternalLog.Add(LogText);
 If LineBreakInStreams then
   StreamStr := StrToUTF8(LogText + sLineBreak)
 else
   StreamStr := StrToUTF8(LogText);
-If (loStream in fSettings.LogOutputs) and Assigned(fStreamLog) then
+If (loStream in fSettings.Outputs) and Assigned(fStreamLog) then
   fStreamLog.WriteBuffer(PUTF8Char(StreamStr)^,Length(StreamStr) * SizeOf(UTF8Char));
-If (loFile in fSettings.LogOutputs) and Assigned(fFileLogStream) then
+If (loFile in fSettings.Outputs) and Assigned(fFileLogStream) then
   fFileLogStream.WriteBuffer(PUTF8Char(StreamStr)^,Length(StreamStr) * SizeOf(UTF8Char));
-If (loConsole in fSettings.LogOutputs) and fConsolePresent and not fConsoleBinded then
+If (loConsole in fSettings.Outputs) and fConsolePresent and not fConsoleBinded then
   WriteLn(StrToCsl(LogText));
-If loExternals in fSettings.LogOutputs then
+If loExternals in fSettings.Outputs then
   For i := LowIndex to HighIndex do
     If fExternalLogs[i].Active then
       fExternalLogs[i].LogObject.Add(LogText);
@@ -588,37 +861,23 @@ end;
 
 Function TSimpleLog.OutputIsActive(Output: TSLLogOutput): Boolean;
 begin
-Result := Output in fSettings.LogOutputs;
+Result := Output in fSettings.Outputs;
 end;
 
 //------------------------------------------------------------------------------
 
 Function TSimpleLog.OutputActivate(Output: TSLLogOutput): Boolean;
 begin
-Result := Output in fSettings.LogOutputs;
-{
-  Logging to console cannot be activated if the console is currently binded or
-  is not present.
-}
-If (Output <> loConsole) or (fConsolePresent and not fConsoleBinded) then
-  Include(fSettings.LogOutputs,Output);
-end;
-
-//------------------------------------------------------------------------------
-
-Function TSimpleLog.OutputTryActivate(Output: TSLLogOutput): Boolean;
-begin
-If (Output <> loConsole) or (fConsolePresent and not fConsoleBinded) then
-  Include(fSettings.LogOutputs,Output);
-Result := Output in fSettings.LogOutputs;
+Result := Output in fSettings.Outputs;
+Include(fSettings.Outputs,Output);
 end;
 
 //------------------------------------------------------------------------------
 
 Function TSimpleLog.OutputDeactivate(Output: TSLLogOutput): Boolean;
 begin
-Result := Output in fSettings.LogOutputs;
-Exclude(fSettings.LogOutputs,Output);
+Result := Output in fSettings.Outputs;
+Exclude(fSettings.Outputs,Output);
 end;
 
 //------------------------------------------------------------------------------
@@ -934,6 +1193,50 @@ If Length(fStrings.HeaderText) < fStrings.BreakerLength then
   AddLogNoTime(GetStampStr(StringOfChar(' ',(fStrings.BreakerLength - Length(fStrings.HeaderText)) div 2) + fStrings.HeaderText,True))
 else
   AddLogNoTime(GetStampStr(fStrings.HeaderText,True));
+end;
+
+//------------------------------------------------------------------------------
+
+Function TSimpleLog.BindConsole: Boolean;
+begin
+If InterlockedExchange(SLCB_StatusWord,SLCB_STATUS_LOCKED) = SLCB_STATUS_UNLOCKED then
+  begin
+    If fConsolePresent and not fConsoleBinded then
+      begin
+        // error output
+        fOriginalErrOutput := TTextRec(ErrOutput);
+        SLCB_BindLogObject(ErrOutput,Self);
+        Rewrite(ErrOutput);
+        // "normal" output
+        fOriginalOutput := TTextRec(Output);
+        SLCB_BindLogObject(Output,Self);
+        Rewrite(Output);
+        // input
+        fOriginalInput := TTextRec(Input);
+        SLCB_BindLogObject(Input,Self);
+        Reset(Input);
+        fConsoleBinded := True;
+      end;
+    Result := fConsoleBinded;
+  end
+else Result := False;
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TSimpleLog.UnbindConsole;
+begin
+If fConsoleBinded then
+  begin
+    Close(Input);
+    TTextRec(Input) := fOriginalInput;
+    Close(Output);
+    TTextRec(Output) := fOriginalOutput;
+    Close(ErrOutput);
+    TTextRec(ErrOutput) := fOriginalErrOutput;    
+    fConsoleBinded := False;
+    InterlockedExchange(SLCB_StatusWord,SLCB_STATUS_UNLOCKED);
+  end;
 end;
 
 end.
