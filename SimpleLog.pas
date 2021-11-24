@@ -10,6 +10,8 @@ unit SimpleLog;
 
 {$IFDEF FPC}
   {$MODE ObjFPC}
+  {$DEFINE FPC_DisableWarns}
+  {$MACRO ON}
 {$ENDIF}
 {$H+}
 
@@ -242,10 +244,16 @@ uses
   {$IFDEF Windows}Windows,{$ENDIF}
   StrRect;
 
+{$IFDEF FPC_DisableWarns}
+  {$DEFINE FPCDWM}
+  {$DEFINE W5024:={$WARN 5024 OFF}} // Parameter "$1" not used
+{$ENDIF}
+
 {===============================================================================
     Auxiliary routines - implementation
 ===============================================================================}
 
+//{$IFDEF FPCDWM}{$PUSH}W5092{$ENDIF}
 procedure InitFormatSettings(out FormatSettings: TFormatSettings);
 begin
 {$WARN SYMBOL_PLATFORM OFF}
@@ -256,6 +264,9 @@ FormatSettings := TFormatSettings.Create(LOCALE_USER_DEFAULT);
 // older delphi and FPC
 {$IFDEF Windows}
 // windows
+{$IFDEF FPC}
+FillChar(Addr(FormatSettings)^,Sizeof(TFormatSettings),0);
+{$ENDIF}
 GetLocaleFormatSettings(LOCALE_USER_DEFAULT,FormatSettings);
 {$ELSE}
 // non-windows
@@ -264,6 +275,7 @@ FormatSettings := DefaultFormatSettings;
 {$IFEND}
 {$WARN SYMBOL_PLATFORM ON}
 end;
+//{$IFDEF FPCDWM}{$POP}{$ENDIF}
 
 {===============================================================================
 --------------------------------------------------------------------------------
@@ -303,6 +315,9 @@ Function SLCB_WriteConsole(Handle: THandle; Ptr: Pointer; CharsToWrite: TStrSize
 var
   WrittenChars: DWORD;
 begin
+{$IFDEF FPC}
+WrittenChars := 0;
+{$ENDIF}
 Result := Windows.WriteConsole(Handle,Ptr,DWORD(CharsToWrite),WrittenChars,nil);
 CharsWritten := TStrSize(WrittenChars);
 end;
@@ -313,6 +328,9 @@ Function SLCB_ReadConsole(Handle: THandle; Ptr: Pointer; CharsToRead: TStrSize; 
 var
   ReadChars:  DWORD;
 begin
+{$IFDEF FPC}
+ReadChars := 0;
+{$ENDIF}
 Result := Windows.ReadConsole(Handle,Ptr,DWORD(CharsToRead),ReadChars,nil);
 CharsRead := TStrSize(ReadChars);
 end;
@@ -342,12 +360,11 @@ Move(F.Buffer,PAnsiChar(ConsoleText)^,F.BufPos);
   So copy data from text buffer into ansi string, convert it to wide string
   and then pass reference to this wide string.
 }
-WideText := StrToWide(AnsiToStr(StrBuffer));
+WideText := StrToWide(AnsiToStr(ConsoleText));
 If SLCB_WriteConsole(F.Handle,PWideChar(WideText),Length(WideText),CharsWritten) then
   begin
     If CharsWritten = TStrSize(Length(WideText)) then
       begin
-        //It seems that in unicode, the text buffer has ansi encoding, not oem.
         TSimpleLog(Addr(F.UserData[SLCB_USERDATAINDEX_OBJECT])^).
           ProcessConsoleLog(AnsiToStr(ConsoleText));
 {$ELSE}
@@ -386,8 +403,8 @@ SetLength(WideText,F.BufSize div 2);
 If SLCB_ReadConsole(F.Handle,PWideChar(WideText),Length(WideText),CharsRead) then
   begin
     SetLength(WideText,CharsRead);
-    ConsoleText := StrToAnsi(WideToStr(Text));
-    If Length(ConsoleText) <= F.BufSize then
+    ConsoleText := StrToAnsi(WideToStr(WideText));
+    If Length(ConsoleText) <= Integer(F.BufSize) then
       begin
         Move(PAnsiChar(ConsoleText)^,F.Buffer,Length(ConsoleText));
         TSimpleLog(Addr(F.UserData[SLCB_USERDATAINDEX_OBJECT])^).ProcessConsoleLog(WideToStr(WideText));
@@ -469,11 +486,6 @@ begin
 with TTextRec(T) do
   begin
     Mode := fmClosed;
-  {$IFDEF FPC}
-    LineEnd := sLineBreak;
-  {$ELSE}
-    Flags := tfCRLF;
-  {$ENDIF}
     BufSize := SizeOf(Buffer);
     BufPos := 0;
     BufEnd := 0;
@@ -482,7 +494,13 @@ with TTextRec(T) do
     FlushFunc := @SLCB_Flush;
     CloseFunc := @SLCB_Close;
     TSimpleLog(Addr(UserData[SLCB_USERDATAINDEX_OBJECT])^) := LogObject;
-    Name := '';
+  {$IF not Defined(FPC) and Defined(Windows) and Defined(Unicode)}
+  {
+    I have no idea when this field was added. But I am assuming if Delphi has
+    unicode support, this field is already there.
+  }
+    CodePage := CP_ACP;
+  {$IFEND}
   end;
 end;
 
@@ -609,10 +627,12 @@ end;
 
 //------------------------------------------------------------------------------
 
+{$IFDEF FPCDWM}{$PUSH}W5024{$ENDIF}
 procedure TSimpleLog.SetCount(Value: Integer);
 begin
 // nothing to do, count is read only
 end;
+{$IFDEF FPCDWM}{$POP}{$ENDIF}
 
 //------------------------------------------------------------------------------
 
