@@ -7,11 +7,20 @@
 -------------------------------------------------------------------------------}
 {===============================================================================
 
-  Simplelog
+  SimpleLog
 
-  Version 1.4 (2020-11-  )
+    Very simple class designed to ease logging. It can log into internal
+    string list, several external objects (TStrings descendants), file,
+    user-provided stream, or write into console if one is present.
 
-  Last change 2020-11-
+    There is also a function which allows capture of console - a log object
+    binds (attaches itself to) current console and captures all input and
+    output text that happens to be put into console via standard functions
+    (Write(Ln), Read(Ln)). This text is then logged as usual.
+
+  Version 1.4 (2020-11-24)
+
+  Last change 2020-11-24
 
   ©2012-2021 František Milt
 
@@ -232,6 +241,9 @@ type
     procedure AddAppendStamp; virtual;
     procedure AddHeader; virtual;
     // console binding
+  {
+    Note that if the console is binded, then output to console is disabled.
+  }
     Function BindConsole: Boolean; virtual;
     procedure UnbindConsole; virtual;
     // settings properties
