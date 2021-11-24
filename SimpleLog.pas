@@ -1,3 +1,40 @@
+{-------------------------------------------------------------------------------
+
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+-------------------------------------------------------------------------------}
+{===============================================================================
+
+  Simplelog
+
+  Version 1.4 (2020-11-  )
+
+  Last change 2020-11-
+
+  ©2012-2021 František Milt
+
+  Contacts:
+    František Milt: frantisek.milt@gmail.com
+
+  Support:
+    If you find this code useful, please consider supporting its author(s) by
+    making a small donation using the following link(s):
+
+      https://www.paypal.me/FMilt
+
+  Changelog:
+    For detailed changelog and history please refer to this git repository:
+
+      github.com/TheLazyTomcat/Lib.Simplelog
+
+  Dependencies:
+    AuxTypes   - github.com/TheLazyTomcat/Lib.AuxTypes
+    AuxClasses - github.com/TheLazyTomcat/Lib.AuxClasses
+    StrRect    - github.com/TheLazyTomcat/Lib.StrRect
+
+===============================================================================}
 unit SimpleLog;
 
 {$IF Defined(WINDOWS) or Defined(MSWINDOWS)}
@@ -241,7 +278,7 @@ type
 implementation
 
 uses
-  {$IFDEF Windows}Windows,{$ENDIF}
+  {$IFDEF Windows}Windows,{$ELSE}BaseUnix,{$ENDIF}
   StrRect;
 
 {$IFDEF FPC_DisableWarns}
@@ -253,7 +290,6 @@ uses
     Auxiliary routines - implementation
 ===============================================================================}
 
-//{$IFDEF FPCDWM}{$PUSH}W5092{$ENDIF}
 procedure InitFormatSettings(out FormatSettings: TFormatSettings);
 begin
 {$WARN SYMBOL_PLATFORM OFF}
@@ -275,7 +311,6 @@ FormatSettings := DefaultFormatSettings;
 {$IFEND}
 {$WARN SYMBOL_PLATFORM ON}
 end;
-//{$IFDEF FPCDWM}{$POP}{$ENDIF}
 
 {===============================================================================
 --------------------------------------------------------------------------------
@@ -312,6 +347,7 @@ threadvar
 //==============================================================================
 
 Function SLCB_WriteConsole(Handle: THandle; Ptr: Pointer; CharsToWrite: TStrSize; out CharsWritten: TStrSize): Boolean;
+{$IFDEF Windows}
 var
   WrittenChars: DWORD;
 begin
@@ -321,10 +357,17 @@ WrittenChars := 0;
 Result := Windows.WriteConsole(Handle,Ptr,DWORD(CharsToWrite),WrittenChars,nil);
 CharsWritten := TStrSize(WrittenChars);
 end;
+{$ELSE}
+begin
+CharsWritten := TStrSize(fpWrite(cInt(Handle),Ptr^,TSize(CharsToWrite)));
+Result := CharsWritten >= 0;
+end;
+{$ENDIF}
 
 //------------------------------------------------------------------------------
 
 Function SLCB_ReadConsole(Handle: THandle; Ptr: Pointer; CharsToRead: TStrSize; out CharsRead: TStrSize): Boolean;
+{$IFDEF Windows}
 var
   ReadChars:  DWORD;
 begin
@@ -334,6 +377,12 @@ ReadChars := 0;
 Result := Windows.ReadConsole(Handle,Ptr,DWORD(CharsToRead),ReadChars,nil);
 CharsRead := TStrSize(ReadChars);
 end;
+{$ELSE}
+begin
+CharsRead := TStrSize(fpRead(cInt(Handle),Ptr^,TSize(CharsToRead)));
+Result := CharsRead >= 0;
+end;
+{$ENDIF}
 
 //==============================================================================
 
@@ -454,12 +503,20 @@ Function SLCB_Open(var F: TTextRec): Integer;
 begin
 case F.Mode of
   fmOutput: begin
+            {$IFDEF Windows}
               F.Handle := GetStdHandle(STD_OUTPUT_HANDLE);
+            {$ELSE}
+              F.Handle := StdOutputHandle;
+            {$ENDIF}
               F.InOutFunc := @SLCB_Output;
               Result := SLCB_ERROR_SUCCESS;
             end;
   fmInput:  begin
+            {$IFDEF Windows}
               F.Handle := GetStdHandle(STD_INPUT_HANDLE);
+            {$ELSE}
+              F.Handle := StdInputHandle;
+            {$ENDIF}
               F.InOutFunc := @SLCB_Input;
               Result := SLCB_ERROR_SUCCESS;
             end;
@@ -486,6 +543,11 @@ begin
 with TTextRec(T) do
   begin
     Mode := fmClosed;
+  {$IFDEF FPC}
+    LineEnd := sLineBreak;
+  {$ELSE}
+    {$IFDEF Windows}Flags := tfCRLF{$ENDIF};
+  {$ENDIF}    
     BufSize := SizeOf(Buffer);
     BufPos := 0;
     BufEnd := 0;
@@ -501,6 +563,7 @@ with TTextRec(T) do
   }
     CodePage := CP_ACP;
   {$IFEND}
+    Name := '';
   end;
 end;
 
