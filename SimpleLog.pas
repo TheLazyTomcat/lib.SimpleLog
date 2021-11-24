@@ -582,22 +582,26 @@ end;
 //------------------------------------------------------------------------------
 
 Function ConsoleBind(const LogFileName: String): Boolean;
+var
+  ObjTemp:  TSimpleLog;
 begin
 Result := False;
-SLCB_BindedLogObject := TSimpleLog.Create;
+ObjTemp := TSimpleLog.Create;
 try
-  SLCB_BindedLogObject.Outputs := [];
-  SLCB_BindedLogObject.SetupOutputToFile(LogFileName,False,True);
-  If SLCB_BindedLogObject.OutputIsActive(loFile) then
+  ObjTemp.Outputs := [];
+  If ObjTemp.BindConsole then
     begin
-      If SLCB_BindedLogObject.BindConsole then
-        Result := True
-      else
-        FreeAndNil(SLCB_BindedLogObject);
+      ObjTemp.SetupOutputToFile(LogFileName,False,True);
+      If ObjTemp.OutputIsActive(loFile) then
+        begin
+          SLCB_BindedLogObject := ObjTemp;
+          Result := True;
+        end
+      else FreeAndNil(ObjTemp);      
     end
-  else FreeAndNil(SLCB_BindedLogObject);
+  else FreeAndNil(ObjTemp);
 except
-  FreeAndNil(SLCB_BindedLogObject);
+  FreeAndNil(ObjTemp);
   raise;
 end;
 end;
