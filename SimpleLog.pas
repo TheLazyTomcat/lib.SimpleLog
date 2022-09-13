@@ -20,9 +20,9 @@
 
   Version 1.4 (2020-11-24)
 
-  Last change 2020-11-24
+  Last change 2022-09-13
 
-  ©2012-2021 František Milt
+  ©2012-2022 František Milt
 
   Contacts:
     František Milt: frantisek.milt@gmail.com
@@ -933,8 +933,8 @@ end;
 procedure TSimpleLog.DoOnLog(const LogText: String);
 begin
 If Assigned(fOnLogEvent) then
-  fOnLogEvent(Self,LogText);
-If Assigned(fOnLogCallback) then
+  fOnLogEvent(Self,LogText)
+else If Assigned(fOnLogCallback) then
   fOnLogCallback(Self,LogText);
 end;
 
